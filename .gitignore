@@ -1,0 +1,8 @@
+.DS_Store
+node_modules/
+app/www/
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+.env
