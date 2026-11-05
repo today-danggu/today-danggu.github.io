@@ -34,6 +34,12 @@ img{max-width:100%}
 }
 html,body{height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+/* 게임 화면: 길게 눌러도 글자 선택·이미지 끌기·확대·당겨서 새로고침이 생기지 않게 */
+html,body{overscroll-behavior:none}
+.app,.modal{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+canvas,svg,img{-webkit-user-drag:none;user-drag:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+.game canvas,.pstrip,.wheel,.mtip{touch-action:none}
+.field,#lobbyLink{-webkit-user-select:text;user-select:text}
 *{box-sizing:border-box}
 button{font:inherit;color:inherit}
 body{overflow:hidden}
@@ -78,7 +84,7 @@ body{overflow:hidden}
 .tip-help b{color:var(--fg);font-weight:600}
 input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 .scale{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:-6px}
-#thickView{width:100%;max-width:250px;aspect-ratio:560/200;height:auto;justify-self:center;background:var(--bg);border:1px solid var(--line);border-radius:12px}
+#thickView{cursor:ew-resize;touch-action:none;width:100%;max-width:250px;aspect-ratio:560/200;height:auto;justify-self:center;background:var(--bg);border:1px solid var(--line);border-radius:12px}
 .scale{margin-top:0}
 .meter{height:12px;border-radius:6px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
 .meter i{display:block;height:100%;width:45%;background:linear-gradient(90deg,#7a6a3e,var(--brass) 60%,#e8763f);border-radius:6px}
@@ -151,7 +157,7 @@ body.m .pname{font-size:12px}
 body.m .pts{font-size:20px}
 body.m .pts small{font-size:11px}
 body.m .turn-tag{display:none}
-body.m .game{grid-column:1/-1;grid-template-columns:52px minmax(0,1fr) 108px;min-height:0;gap:8px;align-items:stretch}
+body.m .game{grid-column:1/-1;grid-template-columns:52px minmax(0,1fr) 124px;min-height:0;gap:8px;align-items:stretch}
 body.m .rack{display:none}
 body.m .stage{height:100%;min-height:0;align-items:center}
 body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-items:center}
@@ -160,9 +166,10 @@ body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-item
 .pstrip{flex:1;width:46px;min-height:80px;position:relative;border-radius:12px;background:var(--panel);border:1px solid var(--line);overflow:hidden;touch-action:none;cursor:grab}
 .pfill{position:absolute;left:0;right:0;top:0;height:0;background:linear-gradient(180deg,#7a6a3e,var(--brass) 60%,#e8763f);opacity:.85}
 .pcue{position:absolute;left:50%;width:10px;margin-left:-5px;top:8px;height:58%;border-radius:5px;background:linear-gradient(180deg,#4b7fc4 0 6px,#efe8d6 6px 16px,#d9b47e 16px 72%,#2a1a12 72%)}
+.mhint{font-size:10px;color:var(--muted);margin-top:-4px}
 .mtip{border:0;background:none;padding:0;width:62px;height:62px;border-radius:50%;cursor:pointer;flex:none}
 .mtip canvas{width:100%;height:100%;display:block}
-#mThick{width:100%;aspect-ratio:560/200;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;flex:none}
+#mThick{cursor:ew-resize;touch-action:none;width:100%;aspect-ratio:560/320;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;flex:none}
 .wheel{flex:1;width:54px;min-height:56px;border-radius:12px;border:1px solid var(--line);background:repeating-linear-gradient(180deg,#323d4a 0 2px,#1a2028 2px 10px);touch-action:none;cursor:ns-resize;box-shadow:inset 0 14px 12px -8px #000,inset 0 -14px 12px -8px #000}
 .mguide{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;flex:none}
 .mguide[aria-pressed="true"]{border-color:var(--brass);color:var(--brass)}
@@ -229,7 +236,7 @@ body.m .loupe{--lz:128px}
       <div class="ctl">
         <div class="ctl-h"><span class="lbl">두께</span><span class="val" id="thickVal">—</span></div>
         <canvas id="thickView" width="560" height="200" aria-label="수구 뒤에서 본 두께"></canvas>
-        <div class="scale"><span>왼쪽 면</span><span>수구 뒤에서 본 모습</span><span>오른쪽 면</span></div>
+        <div class="scale"><span>‹ 왼쪽 면</span><span>좌우로 밀어서 두께 조절</span><span>오른쪽 면 ›</span></div>
       </div>
 
       <div class="ctl">
@@ -255,8 +262,9 @@ body.m .loupe{--lz:128px}
     <div class="mside mright" id="mRight">
       <button class="mtip" id="mTipBtn" type="button" aria-label="당점 바꾸기"><canvas id="mTip" width="248" height="248"></canvas></button>
       <div class="mval" id="mTipVal">중앙</div>
-      <canvas id="mThick" width="560" height="200" aria-label="두께"></canvas>
+      <canvas id="mThick" width="560" height="320" aria-label="두께: 좌우로 밀어서 조절"></canvas>
       <div class="mval" id="mThickVal">—</div>
+      <div class="mhint">‹ 밀어서 두께 ›</div>
       <div class="wheel" id="wheel" aria-label="미세 조준 휠"></div>
       <button class="mguide" id="mGuide" type="button" aria-pressed="true">안내선</button>
     </div>
@@ -982,10 +990,31 @@ cv.addEventListener('pointercancel', () => endDrag(true));
 
 /* 두께 보기: 수구 뒤에서 목적구를 본 모습 */
 let thickInfo = null;
+/* 두께 그림을 좌우로 밀어 두께를 바로 조절 (조준 방향이 따라 바뀐다) */
+let tdrag = null;
+for (const tvEl of [$('thickView'), $('mThick')]) {
+  tvEl.addEventListener('pointerdown', e => {
+    if (!canAct()) return;
+    e.preventDefault(); tvEl.setPointerCapture(e.pointerId);
+    if (thickInfo) aim.target = thickInfo.id;
+    else { autoAim(); }
+    tdrag = { x0: e.clientX, t0: aim.thick, el: tvEl };
+    showLoupe();
+  });
+  tvEl.addEventListener('pointermove', e => {
+    if (!tdrag || tdrag.el !== tvEl) return;
+    // 손가락 150px = 두께 0→끝까지. 작은 화면에서도 촘촘하게
+    const t = Math.max(-0.97, Math.min(0.97, tdrag.t0 + (e.clientX - tdrag.x0) / 150));
+    if (Math.abs(t - aim.thick) < 0.002) return;
+    aim.thick = t; applyThickness();
+  });
+  const end = () => { if (tdrag) { tdrag = null; hideLoupe(700); } };
+  tvEl.addEventListener('pointerup', end); tvEl.addEventListener('pointercancel', end);
+}
 function drawThick() { for (const c of [$('thickView'), $('mThick')]) drawThickOn(c); }
 function drawThickOn(tv) {
   const tctx = tv.getContext('2d');
-  const w = tv.width, h = tv.height, r = 64, cx = w / 2, cy = h / 2 + 4;
+  const w = tv.width, h = tv.height, r = tv.id === 'mThick' ? 92 : 64, cx = w / 2, cy = h / 2 + 4;
   tctx.clearRect(0, 0, w, h);
   tctx.strokeStyle = 'rgba(255,255,255,.12)'; tctx.lineWidth = 2;
   tctx.beginPath(); tctx.moveTo(cx, 12); tctx.lineTo(cx, h - 12); tctx.stroke();
@@ -1050,7 +1079,7 @@ const TUT = [
       <circle cx="222" cy="85" r="52" fill="rgba(212,166,75,.6)" clip-path="url(#tc)"/>
       <circle cx="222" cy="85" r="52" fill="rgba(243,239,227,.15)" stroke="#fff" stroke-width="2.5" stroke-dasharray="7 5"/>
       <text x="40" y="160" fill="#95a0ab" font-size="13" font-family="IBM Plex Sans KR,sans-serif">오른쪽 면 1/2 두께</text></svg>`,
-    b: '조준하면 오른쪽 <b>두께</b> 칸에 수구 뒤에서 목적구를 본 모습이 나와요. 점선 원이 수구이고, <b>금색으로 겹친 만큼</b>이 두께예요. 1/2, 1/4 같은 값도 함께 보여요.' },
+    b: '조준하면 오른쪽 <b>두께</b> 칸에 수구 뒤에서 목적구를 본 모습이 나와요. 점선 원이 수구이고, <b>금색으로 겹친 만큼</b>이 두께예요. 1/2, 1/4 같은 값도 함께 보여요. <b>그림을 좌우로 밀면</b> 두께를 바로 바꿀 수 있어요.' },
   { t: '힘 주고 치기', fig: `<svg ${SVGW}>${tbl}
       <circle cx="210" cy="85" r="9" fill="#f3efe3"/>
       <rect x="40" y="81" width="150" height="8" rx="4" fill="#d9b47e"/><rect x="40" y="81" width="40" height="8" rx="4" fill="#2a1a12"/><rect x="186" y="81" width="4" height="8" fill="#4b7fc4"/>
@@ -1068,7 +1097,7 @@ const TUT = [
 const TUT_M = TUT.map(x => ({ ...x }));
 TUT_M[0].b = '당구대 <b>아무 곳이나 문지르듯 끌면</b> 조준선이 손가락을 따라 천천히 돌아가요. <b>톡 누르면</b> 그 지점을 바로 겨눠요. 더 정밀하게는 오른쪽 아래 <b>휠</b>을 위아래로 굴리세요.';
 TUT_M[1].b = '오른쪽 위 <b>작은 공</b>을 누르면 큰 당점 판이 열려요. 원 하나가 1팁이에요. 위는 밀어치기, 아래는 끌어치기, 좌우는 쿠션 뒤 꺾임을 바꿔요.';
-TUT_M[2].b = '오른쪽 가운데 그림이 수구 뒤에서 목적구를 본 모습이에요. 점선 원이 수구이고, <b>금색으로 겹친 만큼</b>이 두께예요. 아래에 1/2, 1/4 같은 값이 나와요.';
+TUT_M[2].b = '오른쪽 가운데 그림이 수구 뒤에서 목적구를 본 모습이에요. 점선 원이 수구이고, <b>금색으로 겹친 만큼</b>이 두께예요. <b>그림을 좌우로 밀면</b> 두께가 조금씩 바뀌어요. 큐 방향을 돌리는 것보다 정확해요.';
 TUT_M[3] = { t: '힘 주고 치기', fig: `<svg ${SVGW}>${tbl}
       <rect x="28" y="26" width="26" height="118" rx="8" fill="#1a2028" stroke="#2d3743"/>
       <rect x="28" y="26" width="26" height="62" rx="8" fill="#d4a64b" opacity=".85"/>
@@ -1094,6 +1123,14 @@ $('tutNext').addEventListener('click', () => { if (tutIdx < TUT.length - 1) { tu
 $('tutPrev').addEventListener('click', () => { if (tutIdx > 0) { tutIdx--; tutPaint(); } });
 $('tutSkip').addEventListener('click', tutClose);
 $('btnHelp').addEventListener('click', tutOpen);
+
+/* 길게 누를 때 뜨는 메뉴·끌기 막기 */
+document.addEventListener('contextmenu', e => { if (!e.target.closest('.field, #lobbyLink')) e.preventDefault(); });
+document.addEventListener('dragstart', e => e.preventDefault());
+for (const el of [cv, strip, wheel, $('mThick'), $('thickView'), $('tipPad'), $('tipPadBig')]) {
+  el.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  el.addEventListener('touchmove', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+}
 
 /* 화면 배치 */
 function applyLayout() {
