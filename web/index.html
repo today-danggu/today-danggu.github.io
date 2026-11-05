@@ -174,6 +174,15 @@ body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-item
 .mguide{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;flex:none}
 .mguide[aria-pressed="true"]{border-color:var(--brass);color:var(--brass)}
 .spin-sheet{width:min(320px,100%);gap:12px}
+/* 당점·두께 팝업: 당구대가 보이게 옅은 배경, 오른쪽에 붙여서. 바깥을 누르면 닫힘 */
+.modal.pop{background:rgba(8,10,13,.32)}
+body.m .modal.pop{justify-items:end;padding-right:calc(136px + env(safe-area-inset-right,0px));padding-block:8px;align-items:center}
+body.m .modal.pop .sheet{padding:14px;gap:10px;width:min(300px,100%);max-height:100%;overflow:auto}
+body.m #tipPadBig{width:min(180px,48vh);height:min(180px,48vh)}
+.pop-hint{font-size:11px;color:var(--muted);text-align:center}
+#thickBig{width:100%;aspect-ratio:560/320;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;touch-action:none;cursor:ew-resize}
+.fine-3{grid-template-columns:repeat(3,1fr)}
+#mThick{cursor:pointer}
 #tipPadBig{width:200px;height:200px;justify-self:center;touch-action:none;border-radius:50%;cursor:pointer}
 /* 광고 자리 (웹: 애드센스 연결 전 자리 표시) */
 .ad-slot{display:none;place-items:center;border:1px dashed #3a4654;border-radius:10px;color:#6f7b87;font-size:11px;letter-spacing:.08em;text-align:center;background:repeating-linear-gradient(135deg,transparent 0 10px,rgba(255,255,255,.015) 10px 20px)}
@@ -274,12 +283,33 @@ body.m .loupe{--lz:128px}
 <aside class="ad-slot ad-side" data-ad="right" aria-label="광고"><span>광고<br>160×600</span></aside>
 </div>
 
-<div class="modal" id="spinPop" hidden>
+<div class="modal pop" id="spinPop" hidden>
   <div class="sheet spin-sheet">
     <div class="ctl-h"><span class="lbl">당점</span><span class="val" id="bigTipVal">중앙</span></div>
     <canvas id="tipPadBig" width="248" height="248" aria-label="당점 선택"></canvas>
     <div class="tip-help" style="text-align:center"><div><b>위</b> 밀어치기 · <b>아래</b> 끌어치기 · <b>좌·우</b> 회전</div></div>
-    <div class="row"><button class="btn" id="bigTipReset" type="button" style="flex:1">중앙으로</button><button class="shoot" id="spinClose" type="button" style="flex:1;font-size:18px;padding:10px">확인</button></div>
+    <button class="btn" id="bigTipReset" type="button">중앙으로</button>
+    <div class="pop-hint">바깥을 누르면 닫혀요</div>
+  </div>
+</div>
+
+<div class="modal pop" id="thickPop" hidden>
+  <div class="sheet spin-sheet">
+    <div class="ctl-h"><span class="lbl">두께</span><span class="val" id="bigThickVal">—</span></div>
+    <canvas id="thickBig" width="560" height="320" aria-label="두께: 좌우로 밀어서 조절"></canvas>
+    <div class="scale"><span>‹ 왼쪽 면</span><span>좌우로 밀기</span><span>오른쪽 면 ›</span></div>
+    <div class="fine">
+      <button type="button" data-th="-0.05">‹‹ 5%</button>
+      <button type="button" data-th="-0.01">‹ 1%</button>
+      <button type="button" data-th="0.01">1% ›</button>
+      <button type="button" data-th="0.05">5% ››</button>
+    </div>
+    <div class="fine fine-3">
+      <button type="button" data-set="-0.5">왼 1/2</button>
+      <button type="button" data-set="0">정면</button>
+      <button type="button" data-set="0.5">오른 1/2</button>
+    </div>
+    <div class="pop-hint">바깥을 누르면 닫혀요</div>
   </div>
 </div>
 
@@ -593,6 +623,7 @@ function syncUI() {
     const f = 1 - Math.abs(aim.thick);
     $('mThickVal').textContent = Math.abs(aim.thick) < 0.02 ? `정면 ${fracLabel(f)}` : `${aim.thick < 0 ? '왼' : '오른'} ${fracLabel(f)}`;
   } else $('mThickVal').textContent = '쿠션 먼저';
+  $('bigThickVal').textContent = $('thickVal').textContent;
   $('pFill').style.height = (aim.pulling ? aim.power : 0) + '%';
   $('pCue').style.transform = `translateY(${(aim.pulling ? aim.power : 0) / 100 * strip.clientHeight * 0.35}px)`;
   $('mPow').textContent = aim.pulling ? aim.power : '당기기';
@@ -896,7 +927,11 @@ const tipReset = () => { aim.hx = aim.hy = 0; guideDirty = true; syncUI(); };
 $('tipReset').addEventListener('click', tipReset);
 $('bigTipReset').addEventListener('click', tipReset);
 $('mTipBtn').addEventListener('click', () => { if (canAct() || phase === 'menu') $('spinPop').hidden = false; });
-$('spinClose').addEventListener('click', () => { $('spinPop').hidden = true; });
+// 팝업 바깥(배경)을 누르면 닫는다
+for (const id of ['spinPop', 'thickPop']) {
+  const m = $(id);
+  m.addEventListener('pointerdown', e => { if (e.target === m) { m.hidden = true; hideLoupe(0); } });
+}
 
 /* 휴대폰: 힘 막대 (아래로 끌었다 놓으면 샷) */
 let sdrag = null;
@@ -992,29 +1027,48 @@ cv.addEventListener('pointercancel', () => endDrag(true));
 let thickInfo = null;
 /* 두께 그림을 좌우로 밀어 두께를 바로 조절 (조준 방향이 따라 바뀐다) */
 let tdrag = null;
-for (const tvEl of [$('thickView'), $('mThick')]) {
+function thickTarget() { if (thickInfo) aim.target = thickInfo.id; else if (!aim.target || !ball(aim.target)) autoAim(); }
+function setThick(t) {
+  t = Math.max(-0.97, Math.min(0.97, Math.round(t * 1000) / 1000));
+  aim.thick = t; applyThickness();
+}
+for (const tvEl of [$('thickView'), $('mThick'), $('thickBig')]) {
   tvEl.addEventListener('pointerdown', e => {
     if (!canAct()) return;
     e.preventDefault(); tvEl.setPointerCapture(e.pointerId);
     if (thickInfo) aim.target = thickInfo.id;
     else { autoAim(); }
-    tdrag = { x0: e.clientX, t0: aim.thick, el: tvEl };
+    tdrag = { x0: e.clientX, t0: aim.thick, el: tvEl, moved: false };
     showLoupe();
   });
   tvEl.addEventListener('pointermove', e => {
     if (!tdrag || tdrag.el !== tvEl) return;
-    // 손가락 150px = 두께 0→끝까지. 작은 화면에서도 촘촘하게
-    const t = Math.max(-0.97, Math.min(0.97, tdrag.t0 + (e.clientX - tdrag.x0) / 150));
+    const dx = e.clientX - tdrag.x0;
+    if (Math.abs(dx) > 6) tdrag.moved = true;
+    if (!tdrag.moved) return;
+    // 손가락 150px = 두께 0→끝까지 (큰 팝업은 400px로 더 촘촘하게)
+    const t = tdrag.t0 + dx / (tvEl.id === 'thickBig' ? 400 : 150);
     if (Math.abs(t - aim.thick) < 0.002) return;
-    aim.thick = t; applyThickness();
+    setThick(t);
   });
-  const end = () => { if (tdrag) { tdrag = null; hideLoupe(700); } };
+  const end = () => {
+    if (!tdrag) return;
+    const d = tdrag; tdrag = null;
+    // 휴대폰 두께 그림을 톡 누르면 크게 열어서 세밀하게
+    if (d.el.id === 'mThick' && !d.moved) { $('thickPop').hidden = false; showLoupe(); return; }
+    if (d.el.id !== 'thickBig') hideLoupe(700);
+  };
   tvEl.addEventListener('pointerup', end); tvEl.addEventListener('pointercancel', end);
 }
-function drawThick() { for (const c of [$('thickView'), $('mThick')]) drawThickOn(c); }
+function drawThick() {
+  for (const c of [$('thickView'), $('mThick')]) drawThickOn(c);
+  if (!$('thickPop').hidden) drawThickOn($('thickBig'));
+}
+document.querySelectorAll('#thickPop [data-th]').forEach(b => b.addEventListener('click', () => { if (!canAct()) return; thickTarget(); setThick(aim.thick + Number(b.dataset.th)); showLoupe(); }));
+document.querySelectorAll('#thickPop [data-set]').forEach(b => b.addEventListener('click', () => { if (!canAct()) return; thickTarget(); setThick(Number(b.dataset.set)); showLoupe(); }));
 function drawThickOn(tv) {
   const tctx = tv.getContext('2d');
-  const w = tv.width, h = tv.height, r = tv.id === 'mThick' ? 92 : 64, cx = w / 2, cy = h / 2 + 4;
+  const w = tv.width, h = tv.height, r = tv.id === 'thickView' ? 64 : 92, cx = w / 2, cy = h / 2 + 4;
   tctx.clearRect(0, 0, w, h);
   tctx.strokeStyle = 'rgba(255,255,255,.12)'; tctx.lineWidth = 2;
   tctx.beginPath(); tctx.moveTo(cx, 12); tctx.lineTo(cx, h - 12); tctx.stroke();
@@ -1040,10 +1094,10 @@ function drawThickOn(tv) {
 }
 
 function rotate(deg) { if (!canAct()) return; aim.ang += deg * Math.PI / 180; guideDirty = true; syncUI(); if (!wdrag) { showLoupe(); hideLoupe(1200); } }
-document.querySelectorAll('.fine button').forEach(b => b.addEventListener('click', () => rotate(Number(b.dataset.rot))));
+document.querySelectorAll('.fine [data-rot]').forEach(b => b.addEventListener('click', () => rotate(Number(b.dataset.rot))));
 $('guideOn').addEventListener('change', e => { guideOn = e.target.checked; });
 document.addEventListener('keydown', e => {
-  if (!$('menu').hidden || !$('over').hidden || !$('tut').hidden || !$('spinPop').hidden || !$('lobby').hidden) return;
+  if (!$('menu').hidden || !$('over').hidden || !$('tut').hidden || !$('spinPop').hidden || !$('thickPop').hidden || !$('lobby').hidden) return;
   if (e.key === 'ArrowLeft') { rotate(e.shiftKey ? -1 : -0.1); e.preventDefault(); }
   else if (e.key === 'ArrowRight') { rotate(e.shiftKey ? 1 : 0.1); e.preventDefault(); }
   else if (!canAct()) return;
@@ -1127,7 +1181,7 @@ $('btnHelp').addEventListener('click', tutOpen);
 /* 길게 누를 때 뜨는 메뉴·끌기 막기 */
 document.addEventListener('contextmenu', e => { if (!e.target.closest('.field, #lobbyLink')) e.preventDefault(); });
 document.addEventListener('dragstart', e => e.preventDefault());
-for (const el of [cv, strip, wheel, $('mThick'), $('thickView'), $('tipPad'), $('tipPadBig')]) {
+for (const el of [cv, strip, wheel, $('mThick'), $('thickView'), $('thickBig'), $('tipPad'), $('tipPadBig')]) {
   el.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
   el.addEventListener('touchmove', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
 }
