@@ -13,11 +13,41 @@ web/                 정적 웹 (빌드 도구 없음) → GitHub Pages로 배�
   js/config.js       배포 설정 (애드센스 ID 등)
   favicon.svg
   CNAME              danggu.ohsangplay.com
+worker/              온라인 같이하기 서버 (Cloudflare Worker + Durable Object)
+  src/match.ts       방 상태 규칙 (입장·샷·결과·다시 하기·나가기)
+  src/room.ts        방 하나 = Durable Object 하나, WebSocket
+  src/index.ts       POST /api/rooms, GET /api/rooms/:code/ws
 .github/workflows/
   pages.yml          main에 web/ 변경이 푸시되면 Pages 배포
+  server.yml         worker/ 변경이 푸시되면 타입 검사·테스트 후 서버 배포
 ```
 
-앞으로 붙일 것: `worker/` (Cloudflare Worker 서버, 온라인 같이하기·랭킹), `app/` (Capacitor 앱).
+앞으로 붙일 것: `app/` (Capacitor 앱).
+
+## 온라인 같이하기
+
+- 서버 주소: `https://api.ohsangplay.com/danggu` (야추와 같은 api.ohsangplay.com을 경로로 나눠 씀)
+- 방장이 종목·목표 점수를 정해 방을 만들고, 친구는 초대 링크(`?room=코드`)나 방 코드 4글자로 들어와요. 두 명이 차면 바로 시작해요.
+- 물리 계산은 **치는 사람 화면**이 하고, 결과(공 위치·점수·차례)를 서버에 보내요. 상대 화면은 같은 샷을 재생한 뒤 그 결과로 위치를 맞춰요. (기기마다 소수점 계산이 조금씩 달라 생기는 어긋남을 막음)
+- 내 차례에 조준하는 모습(방향·힘·당점)은 상대 화면에 실시간으로 보여요.
+- 새로고침·끊김: 같은 브라우저면 자동으로 같은 자리로 돌아와요. 치다가 끊기면 다시 들어올 때 결과를 바로 계산해서 이어가요.
+- 다시 하기는 두 사람이 모두 눌러야 시작하고, 먼저 치는 사람이 바뀌어요.
+- 아무도 없는 방은 15분, 2시간 넘게 진행이 없는 방은 정리돼요.
+
+### 배포 준비 (한 번만)
+
+저장소 **Settings → Secrets and variables → Actions**에 야추와 같은 값을 넣어요.
+
+- `CLOUDFLARE_API_TOKEN`: Workers Scripts 편집 + ohsangplay.com 영역의 Workers Routes 편집 권한
+- `CLOUDFLARE_ACCOUNT_ID`
+
+### 로컬에서 서버까지 같이 돌리기
+
+```
+cd worker && npm install && npx wrangler dev --port 8787
+cd web && python3 -m http.server 8080
+# 브라우저: http://localhost:8080/?api=http://localhost:8787
+```
 
 ## 화면 배치
 

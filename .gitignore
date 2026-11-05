@@ -6,3 +6,4 @@ app/www/
 google-services.json
 GoogleService-Info.plist
 .env
+.wrangler/

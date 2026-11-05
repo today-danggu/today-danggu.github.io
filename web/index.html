@@ -101,6 +101,19 @@ input[type=range]{width:100%;accent-color:var(--brass);height:28px}
 
 .modal{position:fixed;inset:0;background:rgba(8,10,13,.72);display:grid;place-items:center;padding:20px max(16px,env(safe-area-inset-right,0px)) 20px max(16px,env(safe-area-inset-left,0px));z-index:20;overflow:auto}
 .sheet{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:22px;width:min(460px,100%);display:grid;gap:16px}
+.field{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:10px;padding:10px 12px;font:inherit;font-size:15px}
+.field.code{font-family:var(--f-mono);letter-spacing:.3em;text-transform:uppercase;width:auto;flex:1;min-width:0}
+.join-row{display:flex;gap:8px;align-items:center}
+.join-row .field{flex:1;min-width:0}
+.form-err{color:var(--bad);font-size:13px;min-height:0}
+.form-err:empty{display:none}
+.codebox{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.codebox b{font-family:var(--f-mono);font-size:34px;letter-spacing:.25em;color:var(--brass);font-weight:600}
+.netpill{font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:999px;padding:4px 10px;white-space:nowrap;color:var(--muted)}
+.netpill.me{color:var(--brass-ink);background:var(--brass);border-color:var(--brass)}
+.netpill.off{color:#f0a29b;border-color:#6b3a36}
+.conn-off{font-size:11px;color:#f0a29b;font-weight:600}
+body.m .netpill{padding:2px 8px;font-size:11px}
 .sheet h2{margin:0;font-family:var(--f-display);font-weight:400;font-size:30px;line-height:1.1;text-wrap:balance}
 .sheet h2 span{color:var(--brass)}
 .seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:6px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:4px}
@@ -179,6 +192,7 @@ body.m .loupe{--lz:128px}
     <div class="brand">오늘도 <span>당구</span></div>
     <div class="meta" id="metaLine">4구 · 혼자하기</div>
     <div class="spacer"></div>
+    <div class="netpill" id="netPill" hidden></div>
     <button class="btn" id="btnHelp" type="button">조작법</button>
     <button class="btn" id="btnRack" type="button">처음 배치</button>
     <button class="btn" id="btnMenu" type="button">게임 설정</button>
@@ -273,7 +287,18 @@ body.m .loupe{--lz:128px}
       <div class="seg" id="segMode">
         <button type="button" data-v="solo">혼자하기<small>목표까지 샷 수 기록</small></button>
         <button type="button" data-v="duo">같이하기<small>한 기기에서 번갈아</small></button>
+        <button type="button" data-v="online">온라인<small>친구와 각자 기기로</small></button>
       </div>
+    </div>
+    <div class="ctl" id="onlineBox" hidden>
+      <label class="lbl" for="nick">내 닉네임</label>
+      <input class="field" id="nick" maxlength="8" autocomplete="nickname" placeholder="8글자까지">
+      <div class="join-row">
+        <input class="field code" id="joinCode" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="방 코드" aria-label="방 코드">
+        <button class="btn" id="joinBtn" type="button">코드로 입장</button>
+      </div>
+      <button class="linkbtn" id="resumeBtn" type="button" hidden></button>
+      <div class="form-err" id="onlineErr" role="alert"></div>
     </div>
     <div class="ctl">
       <span class="lbl">종목</span>
@@ -300,6 +325,23 @@ body.m .loupe{--lz:128px}
     </div>
     <div class="rules" id="rules"></div>
     <button class="shoot" id="start" type="button">시작</button>
+  </div>
+</div>
+
+<div class="modal" id="lobby" hidden>
+  <div class="sheet">
+    <div class="tut-step" id="lobbyStep">온라인 같이하기</div>
+    <h2 id="lobbyTitle">상대를 <span>기다리는 중</span></h2>
+    <div class="codebox"><span class="lbl">방 코드</span><b id="lobbyCode">----</b><span class="meta" id="lobbyGame"></span></div>
+    <div class="ctl">
+      <span class="lbl">초대 링크</span>
+      <div class="join-row"><input class="field" id="lobbyLink" readonly aria-label="초대 링크"><button class="btn" id="copyLink" type="button">복사</button></div>
+    </div>
+    <div class="result" id="lobbyText">친구에게 링크나 방 코드를 보내 주세요. 친구가 들어오면 바로 시작해요.</div>
+    <div class="row">
+      <button class="btn" id="lobbyLeave" type="button">방 나가기</button>
+      <button class="shoot" id="lobbyClose" type="button" style="flex:1;font-size:18px;padding:10px" hidden>계속하기</button>
+    </div>
   </div>
 </div>
 
@@ -464,6 +506,14 @@ let shotLog = null, stroke = null;
 const $ = id => document.getElementById(id);
 const ball = id => balls.find(b => b.id === id);
 const cueBall = () => ball(players[cur].ball);
+let net = null; // 온라인 같이하기 연결 (아래 '온라인' 부분)
+/** 지금 내가 조작할 수 있는지. 온라인이면 내 차례이고 공이 멈춰 있을 때만. */
+function canAct() {
+  if (phase !== 'aim') return false;
+  if (!net) return true;
+  const s = net.state;
+  return !!s && s.phase === 'playing' && s.cur === net.seat && !s.pending && net.ready;
+}
 
 function rack() {
   if (cfg.game === '4') balls = [mkBall('W', 'white', 180, 330), mkBall('Y', 'yellow', 180, 170), mkBall('R1', 'red', 290, 250), mkBall('R2', 'red', 750, 250)];
@@ -554,11 +604,11 @@ function syncUI() {
 function renderScore() {
   const box = $('score'); box.innerHTML = '';
   players.forEach((p, i) => {
-    const on = i === cur && cfg.mode === 'duo';
+    const on = i === cur && cfg.mode !== 'solo';
     const el = document.createElement('div'); el.className = 'pcard' + (on ? ' on' : '');
     const kind = ball(p.ball).kind;
     el.innerHTML = `<span class="pdot" style="background:${COLORS[kind]}"></span>
-      <div><div class="pname">${p.name} ${on ? '<span class="turn-tag">차례</span>' : ''}</div>
+      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
       <div class="psub">${NAMES[kind]} · 샷 ${p.shots} · 하이런 ${p.high}</div></div>
       <div class="pts">${p.score}<small>/ ${cfg.target}</small></div>`;
     box.appendChild(el);
@@ -569,8 +619,9 @@ function renderScore() {
 function speed() { return VMAX * aim.power / 100; }
 
 function shoot() {
-  if (phase !== 'aim') return;
+  if (!canAct()) return;
   hideLoupe(0);
+  if (net) { net.myShot = net.state.seq + 1; netSend({ type: 'shot', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy }); }
   phase = 'stroke'; syncUI();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   stroke = { t0: performance.now(), dur: reduce ? 0 : 140 };
@@ -614,21 +665,24 @@ function evaluate() {
   }
   if (scored) { p.score++; p.run++; p.high = Math.max(p.high, p.run); } else p.run = 0;
 
+  if (net) sendResult(msg, sub, tone);
   if (p.score >= cfg.target) { renderScore(); return gameOver(); }
-  if (!scored && cfg.mode === 'duo') { cur = 1 - cur; sub += ` · ${players[cur].name} 차례`; }
+  if (!scored && cfg.mode !== 'solo') { cur = 1 - cur; sub += net ? (cur === net.seat ? ' · 내 차례' : ` · ${players[cur].name} 차례`) : ` · ${players[cur].name} 차례`; }
   toast(msg, sub, tone);
-  phase = 'aim'; renderScore(); autoAim();
+  phase = 'aim'; renderScore(); autoAim(); if (net) netStatus();
 }
 
 function gameOver() {
   phase = 'over';
   const p = players[cur];
+  if (net) return onlineOver();
+  $('again').disabled = false; $('again').textContent = '다시 하기'; $('overMenu').textContent = '게임 설정';
   if (cfg.mode === 'solo') {
     $('overTitle').innerHTML = `${cfg.target}점 <span>달성</span>`;
     $('overText').innerHTML = `<b>${p.shots}번</b>의 샷으로 ${cfg.target}점을 쳤어요. 하이런 <b>${p.high}</b>.`;
   } else {
-    $('overTitle').innerHTML = `${p.name} <span>승리</span>`;
-    $('overText').innerHTML = players.map(q => `${q.name} <b>${q.score}점</b> (샷 ${q.shots}, 하이런 ${q.high})`).join('<br>');
+    $('overTitle').innerHTML = `${esc(p.name)} <span>승리</span>`;
+    $('overText').innerHTML = players.map(q => `${esc(q.name)} <b>${q.score}점</b> (샷 ${q.shots}, 하이런 ${q.high})`).join('<br>');
   }
   $('over').hidden = false; syncUI();
 }
@@ -772,7 +826,7 @@ function loupeFocus() {
   }
   const c = cueBall(); return { x: c.x, y: c.y };
 }
-function showLoupe() { if (phase !== 'aim') return; clearTimeout(loupeTimer); loupeOn = true; lp.hidden = false; }
+function showLoupe() { if (!canAct()) return; clearTimeout(loupeTimer); loupeOn = true; lp.hidden = false; }
 function hideLoupe(delay) { clearTimeout(loupeTimer); loupeTimer = setTimeout(() => { loupeOn = false; lp.hidden = true; }, delay || 0); }
 function drawLoupe() {
   const f = loupeFocus();
@@ -825,7 +879,7 @@ function padSet(e) {
 }
 for (const pad of [$('tipPad'), $('tipPadBig')]) {
   let down = false;
-  pad.addEventListener('pointerdown', e => { if (phase !== 'aim') return; down = true; pad.setPointerCapture(e.pointerId); padSet(e); });
+  pad.addEventListener('pointerdown', e => { if (!canAct()) return; down = true; pad.setPointerCapture(e.pointerId); padSet(e); });
   pad.addEventListener('pointermove', e => { if (down) padSet(e); });
   pad.addEventListener('pointerup', () => down = false);
   pad.addEventListener('pointercancel', () => down = false);
@@ -833,14 +887,14 @@ for (const pad of [$('tipPad'), $('tipPadBig')]) {
 const tipReset = () => { aim.hx = aim.hy = 0; guideDirty = true; syncUI(); };
 $('tipReset').addEventListener('click', tipReset);
 $('bigTipReset').addEventListener('click', tipReset);
-$('mTipBtn').addEventListener('click', () => { if (phase === 'aim' || phase === 'menu') $('spinPop').hidden = false; });
+$('mTipBtn').addEventListener('click', () => { if (canAct() || phase === 'menu') $('spinPop').hidden = false; });
 $('spinClose').addEventListener('click', () => { $('spinPop').hidden = true; });
 
 /* 휴대폰: 힘 막대 (아래로 끌었다 놓으면 샷) */
 let sdrag = null;
 const strip = $('pStrip');
 strip.addEventListener('pointerdown', e => {
-  if (phase !== 'aim') return;
+  if (!canAct()) return;
   strip.setPointerCapture(e.pointerId);
   sdrag = { y0: e.clientY, prev: aim.power };
   aim.pulling = true; aim.power = 0; guideDirty = true; syncUI();
@@ -861,7 +915,7 @@ strip.addEventListener('pointercancel', () => stripEnd(true));
 /* 휴대폰: 미세 조준 휠 */
 let wdrag = null, wheelOff = 0;
 const wheel = $('wheel');
-wheel.addEventListener('pointerdown', e => { if (phase !== 'aim') return; wheel.setPointerCapture(e.pointerId); wdrag = { y: e.clientY }; showLoupe(); });
+wheel.addEventListener('pointerdown', e => { if (!canAct()) return; wheel.setPointerCapture(e.pointerId); wdrag = { y: e.clientY }; showLoupe(); });
 wheel.addEventListener('pointermove', e => {
   if (!wdrag) return; const dy = e.clientY - wdrag.y; wdrag.y = e.clientY;
   wheelOff += dy; wheel.style.backgroundPositionY = wheelOff + 'px';
@@ -886,7 +940,7 @@ function aimAt(p) {
   aim.ang = Math.atan2(p.y - c.y, p.x - c.x); guideDirty = true; syncUI();
 }
 cv.addEventListener('pointerdown', e => {
-  if (phase !== 'aim') return;
+  if (!canAct()) return;
   cv.setPointerCapture(e.pointerId);
   const p = toWorld(e.clientX, e.clientY);
   if (isM) { drag = { mode: 'rot', p0: p, sx: e.clientX, sy: e.clientY, moved: false, prev: angTo(p) }; showLoupe(); return; }
@@ -956,13 +1010,14 @@ function drawThickOn(tv) {
   tctx.fillStyle = '#d4a64b'; tctx.beginPath(); tctx.arc(qx, cy, 5, 0, 7); tctx.fill();
 }
 
-function rotate(deg) { if (phase !== 'aim') return; aim.ang += deg * Math.PI / 180; guideDirty = true; syncUI(); if (!wdrag) { showLoupe(); hideLoupe(1200); } }
+function rotate(deg) { if (!canAct()) return; aim.ang += deg * Math.PI / 180; guideDirty = true; syncUI(); if (!wdrag) { showLoupe(); hideLoupe(1200); } }
 document.querySelectorAll('.fine button').forEach(b => b.addEventListener('click', () => rotate(Number(b.dataset.rot))));
 $('guideOn').addEventListener('change', e => { guideOn = e.target.checked; });
 document.addEventListener('keydown', e => {
-  if (!$('menu').hidden || !$('over').hidden || !$('tut').hidden || !$('spinPop').hidden) return;
+  if (!$('menu').hidden || !$('over').hidden || !$('tut').hidden || !$('spinPop').hidden || !$('lobby').hidden) return;
   if (e.key === 'ArrowLeft') { rotate(e.shiftKey ? -1 : -0.1); e.preventDefault(); }
   else if (e.key === 'ArrowRight') { rotate(e.shiftKey ? 1 : 0.1); e.preventDefault(); }
+  else if (!canAct()) return;
   else if (e.key === 'ArrowUp') { aim.power = Math.min(100, aim.power + 1); guideDirty = true; syncUI(); e.preventDefault(); }
   else if (e.key === 'ArrowDown') { aim.power = Math.max(5, aim.power - 1); guideDirty = true; syncUI(); e.preventDefault(); }
   else if (e.code === 'Space') { shoot(); e.preventDefault(); }
@@ -1059,20 +1114,332 @@ function applyLayout() {
 function segBind(id, key, conv) {
   const seg = $(id);
   const paint = () => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(conv(b.dataset.v) === cfg[key])));
-  seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { cfg[key] = conv(b.dataset.v); paint(); paintRules(); }));
+  seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { cfg[key] = conv(b.dataset.v); paint(); paintRules(); paintMenu(); }));
   paint();
 }
 function paintRules() {
   $('rules').innerHTML = cfg.game === '4'
-    ? `<b>4구</b> — 내 공으로 <b>빨간 공 2개</b>를 모두 맞히면 1점, 계속 칩니다. 상대 공을 맞히면 <b>파울 −1</b>. ${cfg.mode === 'duo' ? '실패·파울이면 차례가 넘어가요.' : '혼자하기는 노란 공이 상대 공이에요.'}`
-    : `<b>3구 (쓰리쿠션)</b> — 내 공이 두 공을 모두 맞히되, <b>두 번째 공을 맞히기 전 쿠션 3번 이상</b>이면 1점. ${cfg.mode === 'duo' ? '실패하면 차례가 넘어가요.' : ''}`;
+    ? `<b>4구</b> — 내 공으로 <b>빨간 공 2개</b>를 모두 맞히면 1점, 계속 칩니다. 상대 공을 맞히면 <b>파울 −1</b>. ${cfg.mode !== 'solo' ? '실패·파울이면 차례가 넘어가요.' : '혼자하기는 노란 공이 상대 공이에요.'}`
+    : `<b>3구 (쓰리쿠션)</b> — 내 공이 두 공을 모두 맞히되, <b>두 번째 공을 맞히기 전 쿠션 3번 이상</b>이면 1점. ${cfg.mode !== 'solo' ? '실패하면 차례가 넘어가요.' : ''}`;
 }
 segBind('segMode', 'mode', v => v); segBind('segGame', 'game', v => v); segBind('segTarget', 'target', Number); segBind('segLayout', 'layout', v => v); paintRules();
-$('start').addEventListener('click', () => { $('menu').hidden = true; newGame(); applyLayout(); if (!tutSeen()) tutOpen(); });
-$('btnMenu').addEventListener('click', () => { $('menu').hidden = false; });
-$('btnRack').addEventListener('click', () => { if (phase === 'moving' || phase === 'stroke') return; rack(); autoAim(); });
-$('again').addEventListener('click', () => { $('over').hidden = true; newGame(); });
-$('overMenu').addEventListener('click', () => { $('over').hidden = true; $('menu').hidden = false; });
+$('start').addEventListener('click', () => {
+  if (cfg.mode === 'online') return createOnline();
+  leaveOnline(); $('menu').hidden = true; newGame(); applyLayout(); if (!tutSeen()) tutOpen();
+});
+$('btnMenu').addEventListener('click', () => { if (net) return openLobby(); $('menu').hidden = false; });
+$('btnRack').addEventListener('click', () => { if (net || phase === 'moving' || phase === 'stroke') return; rack(); autoAim(); });
+$('again').addEventListener('click', () => {
+  if (net) { netSend({ type: 'rematch' }); $('again').disabled = true; $('again').textContent = '상대를 기다리는 중…'; return; }
+  $('over').hidden = true; newGame();
+});
+$('overMenu').addEventListener('click', () => { $('over').hidden = true; leaveOnline(true); $('menu').hidden = false; });
+
+
+/* ---------- 온라인 같이하기 ----------
+ * 치는 사람 화면이 물리를 계산하고 결과(공 위치·점수)를 서버에 보낸다.
+ * 상대 화면은 같은 샷을 재생한 뒤, 도착한 결과로 공 위치를 맞춘다.
+ */
+const NICK_KEY = 'danggu.nick', ROOM_KEY = 'danggu.room';
+function apiBase() {
+  try {
+    const q = new URLSearchParams(location.search).get('api');
+    if (q && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(q)) return q; // 로컬 개발용
+  } catch (e) {}
+  return (CONFIG.API_BASE || '').replace(/\/+$/, '');
+}
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function store(key, val) { try { val == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
+function load(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
+function inviteLink(code) { return `${location.origin}${location.pathname}?room=${code}`; }
+
+function paintMenu() {
+  const on = cfg.mode === 'online';
+  $('onlineBox').hidden = !on;
+  $('start').textContent = on ? '방 만들기' : '시작';
+  const saved = load(ROOM_KEY);
+  const fresh = saved && Date.now() - saved.at < 2 * 60 * 60 * 1000;
+  $('resumeBtn').hidden = !(on && fresh);
+  if (fresh) $('resumeBtn').textContent = `진행 중이던 방 ${saved.code}(으)로 돌아가기`;
+}
+function onlineError(msg) { $('onlineErr').textContent = msg || ''; }
+function nickname() {
+  const n = $('nick').value.replace(/\s+/g, ' ').trim();
+  if (!n) { onlineError('닉네임을 입력해 주세요'); $('nick').focus(); return null; }
+  store(NICK_KEY, n); return n;
+}
+
+async function createOnline() {
+  onlineError('');
+  const name = nickname(); if (!name) return;
+  if (!apiBase()) return onlineError('온라인 서버가 아직 준비되지 않았어요');
+  $('start').disabled = true;
+  try {
+    const res = await fetch(`${apiBase()}/api/rooms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: cfg.game, target: cfg.target }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || '방을 만들지 못했어요');
+    connectOnline(data.code, null, name);
+  } catch (e) {
+    onlineError(e.message === 'Failed to fetch' ? '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요' : e.message);
+  } finally { $('start').disabled = false; }
+}
+function joinOnline() {
+  onlineError('');
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (!/^[A-Z0-9]{4}$/.test(code)) { onlineError('방 코드 4글자를 입력해 주세요'); $('joinCode').focus(); return; }
+  const name = nickname(); if (!name) return;
+  if (!apiBase()) return onlineError('온라인 서버가 아직 준비되지 않았어요');
+  const saved = load(ROOM_KEY);
+  connectOnline(code, saved && saved.code === code ? saved.playerId : null, name);
+}
+$('joinBtn').addEventListener('click', joinOnline);
+$('joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') joinOnline(); });
+$('resumeBtn').addEventListener('click', () => { const s = load(ROOM_KEY); if (s) connectOnline(s.code, s.playerId, load(NICK_KEY) || '플레이어'); });
+
+function connectOnline(code, playerId, name) {
+  leaveOnline();
+  net = { code, playerId, name, seat: -1, ws: null, state: null, ready: false, round: 0, applied: 0, myShot: 0,
+          replaying: 0, waitingState: null, retry: 0, timer: null, ping: null, closed: false, lastAim: '', aimAt: 0 };
+  cfg.mode = 'online';
+  $('menu').hidden = true;
+  openLobby('연결 중…');
+  openSocket();
+}
+function openSocket() {
+  const n = net; if (!n || n.closed) return;
+  const url = new URL(`${apiBase()}/api/rooms/${n.code}/ws`);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.searchParams.set('name', n.name);
+  if (n.playerId) url.searchParams.set('playerId', n.playerId);
+  const ws = new WebSocket(url); n.ws = ws;
+  ws.onopen = () => {
+    n.retry = 0; clearInterval(n.ping);
+    n.ping = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+  };
+  ws.onmessage = ev => {
+    if (ev.data === 'pong' || net !== n) return;
+    let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+    onNetMessage(m);
+  };
+  ws.onclose = () => {
+    clearInterval(n.ping);
+    if (net !== n || n.closed) return;
+    n.ready = false; netStatus();
+    const wait = Math.min(10000, 1000 * 2 ** n.retry++);
+    n.timer = setTimeout(openSocket, wait);
+  };
+}
+function netSend(msg) { if (net && net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(msg)); }
+
+/** 온라인을 끝낸다. tellServer면 자리를 비운다(상대에게 나갔다고 알려짐). */
+function leaveOnline(tellServer) {
+  if (!net) return;
+  const n = net; n.closed = true;
+  if (tellServer) { try { n.ws && n.ws.readyState === 1 && n.ws.send(JSON.stringify({ type: 'leave' })); } catch (e) {} store(ROOM_KEY, null); }
+  clearTimeout(n.timer); clearInterval(n.ping);
+  setTimeout(() => { try { n.ws && n.ws.close(); } catch (e) {} }, 100);
+  net = null; $('netPill').hidden = true; $('lobby').hidden = true; $('btnRack').hidden = false;
+  if (tellServer) { try { const u = new URL(location.href); u.searchParams.delete('room'); history.replaceState(null, '', u); } catch (e) {} }
+  segRepaint();
+}
+function segRepaint() { document.querySelectorAll('#segMode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === cfg.mode))); paintMenu(); paintRules(); }
+
+function onNetMessage(m) {
+  const n = net;
+  if (m.type === 'welcome') {
+    n.playerId = m.playerId; n.seat = m.seat; n.ready = true;
+    store(ROOM_KEY, { code: n.code, playerId: m.playerId, at: Date.now() });
+    try { const u = new URL(location.href); u.searchParams.set('room', n.code); history.replaceState(null, '', u); } catch (e) {}
+    return;
+  }
+  if (m.type === 'error') {
+    if (m.fatal) {
+      const msg = m.message; leaveOnline(); store(ROOM_KEY, null);
+      $('over').hidden = true; phase = 'menu'; cfg.mode = 'online'; segRepaint();
+      $('menu').hidden = false; onlineError(msg);
+    } else {
+      toast('잠깐만요', m.message, 'bad');
+      if (n.state) { n.replaying = 0; syncFromState(n.state, true); }
+    }
+    return;
+  }
+  if (m.type === 'aim') {
+    if (phase !== 'aim' || canAct()) return;
+    aim.ang = m.ang; aim.power = m.power; aim.hx = m.hx; aim.hy = m.hy; aim.pulling = m.pulling;
+    guideDirty = true; syncUI(); return;
+  }
+  if (m.type === 'shot') {
+    if (m.by === n.seat || m.seq <= n.applied || n.replaying === m.seq) return;
+    startReplay(m); return;
+  }
+  if (m.type === 'state') onState(m);
+}
+
+function onState(s) {
+  const n = net; n.state = s;
+  n.seat = s.you;
+  store(ROOM_KEY, { code: n.code, playerId: n.playerId, at: Date.now() });
+  if (s.phase === 'waiting') {
+    if (n.round > 0) toast('상대가 나갔어요', '새 상대를 기다리는 중이에요', 'bad');
+    n.round = -1; phase = 'menu'; $('over').hidden = true;
+    openLobby(s.seats.filter(Boolean).length === 2 ? '연결 중…' : null);
+    netStatus(); return;
+  }
+  if (s.round !== n.round) {
+    // 새 판
+    n.round = s.round; n.applied = -1; n.myShot = 0; n.replaying = 0; n.waitingState = null;
+    cfg.game = s.game; cfg.target = s.target;
+    $('lobby').hidden = true; $('over').hidden = true;
+    $('metaLine').textContent = `${cfg.game === '4' ? '4구' : '3구 (쓰리쿠션)'} · 온라인 ${n.code} · 목표 ${cfg.target}점`;
+    const mk = (seat, ballId, oppId) => ({ name: (s.seats[seat] && s.seats[seat].name) || '빈자리', ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0 });
+    players = [mk(0, 'W', 'Y'), mk(1, 'Y', 'W')];
+    applyLayout();
+    if (!tutSeen()) tutOpen();
+  }
+  s.seats.forEach((st, i) => { if (players[i]) { players[i].name = st ? st.name : '나감'; players[i].off = !st || !st.connected; } });
+  const animating = phase === 'stroke' || phase === 'moving';
+  if (animating) {
+    // 재생이 끝나면 맞춘다
+    if (s.seq > n.applied) n.waitingState = s;
+    renderScore(); netStatus(); return;
+  }
+  syncFromState(s, s.seq !== n.applied);
+}
+
+/** 서버 상태로 공·점수·차례를 맞춘다. */
+function syncFromState(s, changed) {
+  const n = net;
+  const prevCur = cur, wasAim = phase === 'aim';
+  if (s.balls) balls = s.balls.map(b => mkBall(b.id, b.kind, b.x, b.y)); else if (changed) rack();
+  s.stats.forEach((st, i) => Object.assign(players[i], st));
+  cur = s.cur; n.replaying = 0; guideDirty = true;
+  const fresh = changed && s.seq > 0 && s.seq > n.applied;
+  if (fresh && s.lastToast && s.lastToast.msg && n.myShot !== s.seq) {
+    const t = s.lastToast;
+    toast(t.msg, t.sub.replace(/ · .+ 차례$/, '') + (s.phase === 'playing' ? (s.cur === n.seat ? ' · 내 차례' : ` · ${players[s.cur].name} 차례`) : ''), t.tone);
+  }
+  n.applied = s.seq; n.waitingState = null;
+  if (s.phase === 'finished') { phase = 'over'; renderScore(); onlineOver(); netStatus(); return; }
+  phase = 'aim'; renderScore();
+  if (changed || prevCur !== cur || !wasAim) autoAim(); else syncUI();
+  netStatus();
+  // 내 샷이 결과 없이 남아 있으면(쳤는데 새로고침 등) 바로 계산해서 보낸다
+  if (s.pending && s.pending.seq > n.applied) {
+    if (s.pending.by === n.seat && n.myShot !== s.pending.seq) fastForward(s.pending);
+    else if (s.pending.by !== n.seat && n.replaying !== s.pending.seq) startReplay(s.pending);
+  }
+}
+
+function startReplay(shot) {
+  const n = net; if (!n || !players.length) return;
+  n.replaying = shot.seq; cur = shot.by;
+  aim.ang = shot.ang; aim.power = shot.power; aim.hx = shot.hx; aim.hy = shot.hy; aim.pulling = false;
+  hideLoupe(0); guideDirty = true;
+  phase = 'stroke'; syncUI(); renderScore();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  stroke = { t0: performance.now(), dur: reduce ? 0 : 140 };
+  n.replayAt = performance.now();
+  netStatus();
+}
+/** 상대 샷 재생이 끝났을 때: 결과가 와 있으면 맞추고, 아니면 기다린다. */
+function settleReplay() {
+  const n = net;
+  phase = 'settle';
+  if (n.waitingState) { const s = n.waitingState; n.replaying = 0; syncFromState(s, true); }
+}
+
+/** 내 샷 결과를 화면 재생 없이 바로 계산 (새로고침 뒤 이어받기). */
+function fastForward(shot) {
+  const n = net;
+  n.myShot = shot.seq; cur = shot.by;
+  aim.ang = shot.ang; aim.power = shot.power; aim.hx = shot.hx; aim.hy = shot.hy;
+  const c = cueBall();
+  strike(c, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
+  shotLog = { cue: c.id, hits: [], cush: 0 };
+  for (let i = 0; i < 600 * 60 && !balls.every(isStopped); i++) { const ev = []; step(balls, DT, ev); logEvents(ev); }
+  evaluate();
+}
+
+function sendResult(msg, sub, tone) {
+  const n = net;
+  netSend({ type: 'result', seq: n.myShot, balls: balls.map(b => ({ id: b.id, kind: b.kind, x: b.x, y: b.y })),
+            stats: players.map(p => ({ score: p.score, run: p.run, high: p.high, shots: p.shots })), toast: { msg, sub, tone } });
+  n.applied = n.myShot;
+}
+
+/** 매 프레임: 내 조준을 상대에게 보내고, 상대 결과가 늦으면 맞춘다. */
+function netTick(now) {
+  const n = net;
+  if (canAct() && now - n.aimAt > 80) {
+    const key = [aim.ang.toFixed(4), aim.power, aim.hx, aim.hy, aim.pulling].join();
+    if (key !== n.lastAim) { n.lastAim = key; n.aimAt = now; netSend({ type: 'aim', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, pulling: aim.pulling }); }
+  }
+  // 결과가 왔는데 재생이 너무 오래 걸리면(창이 가려졌던 경우 등) 바로 맞춘다
+  if (n.waitingState && n.replaying && (document.hidden || now - n.replayAt > 15000)) { const s = n.waitingState; n.replaying = 0; syncFromState(s, true); }
+}
+
+function netStatus() {
+  const n = net, pill = $('netPill');
+  $('btnRack').hidden = !!n;
+  if (!n) { pill.hidden = true; return; }
+  pill.hidden = false; pill.className = 'netpill';
+  const s = n.state;
+  if (!n.ready) { pill.textContent = '다시 연결하는 중…'; pill.classList.add('off'); return; }
+  if (!s || s.phase === 'waiting') { pill.textContent = `방 ${n.code} · 상대 기다리는 중`; return; }
+  if (s.phase === 'finished') { pill.textContent = '경기 끝'; return; }
+  const other = s.seats[1 - n.seat];
+  if (other && !other.connected) { pill.textContent = '상대 연결 끊김'; pill.classList.add('off'); return; }
+  if (s.cur === n.seat) { pill.textContent = s.pending ? '공이 움직이는 중' : '내 차례'; if (!s.pending) pill.classList.add('me'); }
+  else pill.textContent = `${(other && other.name) || '상대'} 차례`;
+}
+
+function openLobby(status) {
+  const n = net; if (!n) return;
+  $('lobbyCode').textContent = n.code;
+  const s = n.state;
+  $('lobbyGame').textContent = s ? `${s.game === '4' ? '4구' : '3구'} · 목표 ${s.target}점` : '';
+  $('lobbyLink').value = inviteLink(n.code);
+  const playing = s && s.phase !== 'waiting';
+  $('lobbyTitle').innerHTML = status ? esc(status) : playing ? `방 <span>${n.code}</span>` : '상대를 <span>기다리는 중</span>';
+  $('lobbyText').textContent = playing ? '방 나가기를 누르면 상대에게 나갔다고 알려지고 이 판은 끝나요.'
+    : '친구에게 링크나 방 코드를 보내 주세요. 친구가 들어오면 바로 시작해요.';
+  $('lobbyClose').hidden = !playing;
+  $('lobby').hidden = false;
+}
+$('lobbyClose').addEventListener('click', () => { $('lobby').hidden = true; });
+$('lobbyLeave').addEventListener('click', () => { leaveOnline(true); phase = 'menu'; cfg.mode = 'online'; segRepaint(); $('menu').hidden = false; });
+$('copyLink').addEventListener('click', () => {
+  const v = $('lobbyLink').value;
+  const done = () => { $('copyLink').textContent = '복사됨'; setTimeout(() => $('copyLink').textContent = '복사', 1500); };
+  const fallback = () => { $('lobbyLink').select(); try { document.execCommand('copy'); done(); } catch (e) {} };
+  try { navigator.clipboard.writeText(v).then(done, fallback); } catch (e) { fallback(); }
+});
+
+function onlineOver() {
+  const n = net, s = n.state;
+  const winner = s && s.winner != null ? s.winner : cur;
+  $('overTitle').innerHTML = winner === n.seat ? '내가 <span>이겼어요</span>' : `${esc(players[winner].name)} <span>승리</span>`;
+  $('overText').innerHTML = players.map((q, i) => `${esc(q.name)}${i === n.seat ? ' (나)' : ''} <b>${q.score}점</b> (샷 ${q.shots}, 하이런 ${q.high})`).join('<br>');
+  const mine = s && s.rematch[n.seat], theirs = s && s.rematch[1 - n.seat];
+  $('again').disabled = !!mine;
+  $('again').textContent = mine ? '상대를 기다리는 중…' : theirs ? '다시 하기 (상대가 원해요)' : '다시 하기';
+  $('overMenu').textContent = '방 나가기';
+  $('over').hidden = false; syncUI();
+}
+
+function bootOnline() {
+  const nick = load(NICK_KEY); if (nick) $('nick').value = nick;
+  let code = null;
+  try { code = (new URLSearchParams(location.search).get('room') || '').toUpperCase(); } catch (e) {}
+  if (code && /^[A-Z0-9]{4}$/.test(code)) {
+    cfg.mode = 'online'; segRepaint();
+    $('joinCode').value = code;
+    const saved = load(ROOM_KEY);
+    if (saved && saved.code === code && nick) return connectOnline(code, saved.playerId, nick);
+    $('nick').focus();
+  }
+  paintMenu();
+}
 
 /* 루프 */
 let last = performance.now(), acc = 0;
@@ -1082,13 +1449,14 @@ function loop(now) {
   if (phase === 'moving') {
     acc += dt;
     while (acc >= DT) { const ev = []; step(balls, DT, ev); logEvents(ev); acc -= DT; }
-    if (balls.every(isStopped)) { acc = 0; evaluate(); }
+    if (balls.every(isStopped)) { acc = 0; if (net && net.replaying) settleReplay(); else evaluate(); }
   }
   if (phase === 'aim' && guideDirty && players.length) {
     const c = cueBall();
     guide = simulateGuide(balls, c.id, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
     guideDirty = false;
   }
+  if (net) netTick(now);
   draw(); if (loupeOn && phase === 'aim') drawLoupe(); requestAnimationFrame(loop);
 }
 
@@ -1096,6 +1464,7 @@ function loop(now) {
 newGame(); phase = 'menu';
 addEventListener('resize', () => { applyLayout(); });
 applyLayout(); syncUI(); requestAnimationFrame(loop);
+bootOnline();
 </script>
 
 </body>
