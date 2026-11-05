@@ -138,3 +138,52 @@ describe('나가기', () => {
     expect(s.phase).toBe('playing');
   });
 });
+
+describe('포켓볼', () => {
+  const poolBalls = (sunk: number[] = []) => [
+    { id: 'C', kind: 'white', x: 250, y: 250 },
+    ...Array.from({ length: 15 }, (_, i) => ({ id: `B${i + 1}`, kind: 'pool', x: 700 + i, y: 250, in: sunk.includes(i + 1) })),
+  ];
+  const extra = (groups: [string | null, string | null] = [null, null], bih = false) => ({ groups, bih, broke: true, kitchen: false });
+  function poolRoom() {
+    const s = createRoom('PQRS', '8', 10, T);
+    join(s, null, 'a', 'id-a', T);
+    join(s, null, 'b', 'id-b', T);
+    return s;
+  }
+  it('공 16개와 들어간 공을 기억하고, 차례와 공 무리는 친 사람이 정한다', () => {
+    const s = poolRoom();
+    shoot(s, 0, { ...shot, cx: 200, cy: 260 }, T);
+    expect(s.pending).toMatchObject({ cx: 200, cy: 260 });
+    applyResult(s, 0, { seq: 1, balls: poolBalls([3]), stats: [stat(1, 1), stat()], cur: 0, winner: null, extra: extra(['solid', 'stripe']) }, T);
+    expect(s.balls?.find((b) => b.id === 'B3')).toMatchObject({ in: true, n: 3 });
+    expect(s.cur).toBe(0);
+    expect(s.extra?.groups).toEqual(['solid', 'stripe']);
+    const v = viewFor(s, 1, [true, true]);
+    expect(v.extra?.groups[0]).toBe('solid');
+  });
+  it('상대 공을 넣어 상대 점수가 바뀌어도 받는다, 같은 무리 둘은 막는다', () => {
+    const s = poolRoom();
+    shoot(s, 0, shot, T);
+    expect(() => applyResult(s, 0, { seq: 1, balls: poolBalls(), stats: [stat(), stat()], cur: 1, extra: extra(['solid', 'solid']) }, T)).toThrow(RoomError);
+    applyResult(s, 0, { seq: 1, balls: poolBalls([10]), stats: [stat(0, 1), stat(1)], cur: 1, winner: null, extra: extra(['solid', 'stripe'], true) }, T);
+    expect(s.stats[1].score).toBe(1);
+    expect(s.cur).toBe(1);
+    expect(s.extra?.bih).toBe(true);
+  });
+  it('승자가 오면 끝나고, 다시 하기면 포켓볼 상태도 처음으로', () => {
+    const s = poolRoom();
+    shoot(s, 0, shot, T);
+    applyResult(s, 0, { seq: 1, balls: poolBalls([8]), stats: [stat(), stat()], cur: 0, winner: 1, extra: extra() }, T);
+    expect(s.phase).toBe('finished');
+    expect(s.winner).toBe(1);
+    requestRematch(s, 0, T);
+    requestRematch(s, 1, T);
+    expect(s.extra).toBeNull();
+    expect(s.balls).toBeNull();
+  });
+  it('흰 공 위치가 당구대 밖이면 막는다', () => {
+    const s = poolRoom();
+    expect(() => shoot(s, 0, { ...shot, cx: -50, cy: 10 }, T)).toThrow(RoomError);
+  });
+});

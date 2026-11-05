@@ -10,8 +10,8 @@ export const ROOM_CODE_LENGTH = 4;
 export const NAME_MAX = 8;
 export const TARGETS = [5, 10, 20] as const;
 
-export type GameKind = '4' | '3';
-export type BallKind = 'white' | 'yellow' | 'red';
+export type GameKind = '4' | '3' | '8';
+export type BallKind = 'white' | 'yellow' | 'red' | 'pool';
 export type Phase = 'waiting' | 'playing' | 'finished';
 
 /** 당구대 크기 (게임 화면과 같은 단위). */
@@ -23,7 +23,22 @@ export interface Ball {
   kind: BallKind;
   x: number;
   y: number;
+  /** 포켓볼 번호 (1~15). 캐롬·흰 공은 0 */
+  n?: number;
+  /** 포켓볼: 구멍에 들어갔는지 */
+  in?: boolean;
 }
+
+/** 포켓볼 진행 상태 (치는 사람 화면이 계산해서 보낸다) */
+export interface PoolExtra {
+  groups: [Group | null, Group | null];
+  /** 다음 사람이 흰 공을 원하는 곳에 놓고 친다 (파울 뒤·브레이크) */
+  bih: boolean;
+  broke: boolean;
+  /** 흰 공을 왼쪽 선 안에만 놓을 수 있다 (브레이크 전) */
+  kitchen: boolean;
+}
+export type Group = 'solid' | 'stripe';
 
 export interface PlayerStat {
   score: number;
@@ -45,6 +60,9 @@ export interface Shot {
   power: number;
   hx: number;
   hy: number;
+  /** 포켓볼: 친 순간의 흰 공 위치 (프리볼로 옮겼을 수 있다) */
+  cx?: number;
+  cy?: number;
 }
 
 export interface Toast {
@@ -71,6 +89,8 @@ export interface RoomState {
   seq: number;
   /** 쳤지만 아직 결과가 오지 않은 샷. */
   pending: Shot | null;
+  /** 포켓볼 진행 상태. 새 판이면 null */
+  extra: PoolExtra | null;
   lastToast: Toast | null;
   winner: number | null;
   rematch: [boolean, boolean];
@@ -80,7 +100,7 @@ export interface RoomState {
 
 export class RoomError extends Error {}
 
-const BALLS: Record<GameKind, { id: string; kind: BallKind }[]> = {
+const BALLS: Record<GameKind, { id: string; kind: BallKind; n?: number }[]> = {
   '4': [
     { id: 'W', kind: 'white' },
     { id: 'Y', kind: 'yellow' },
@@ -92,6 +112,7 @@ const BALLS: Record<GameKind, { id: string; kind: BallKind }[]> = {
     { id: 'Y', kind: 'yellow' },
     { id: 'R1', kind: 'red' },
   ],
+  '8': [{ id: 'C', kind: 'white' }, ...Array.from({ length: 15 }, (_, i) => ({ id: `B${i + 1}`, kind: 'pool' as BallKind, n: i + 1 }))],
 };
 
 const emptyStat = (): PlayerStat => ({ score: 0, run: 0, high: 0, shots: 0 });
@@ -109,7 +130,7 @@ export function randomRoomCode(): string {
 }
 
 export function isGameKind(v: unknown): v is GameKind {
-  return v === '4' || v === '3';
+  return v === '4' || v === '3' || v === '8';
 }
 
 export function isTarget(v: unknown): v is number {
@@ -139,6 +160,7 @@ export function createRoom(code: string, game: GameKind, target: number, now: nu
     stats: [emptyStat(), emptyStat()],
     seq: 0,
     pending: null,
+    extra: null,
     lastToast: null,
     winner: null,
     rematch: [false, false],
@@ -155,6 +177,7 @@ function startGame(state: RoomState, now: number): void {
   state.stats = [emptyStat(), emptyStat()];
   state.seq = 0;
   state.pending = null;
+  state.extra = null;
   state.lastToast = null;
   state.winner = null;
   state.rematch = [false, false];
@@ -197,6 +220,7 @@ export function leave(state: RoomState, seat: number, now: number): void {
   if (state.phase !== 'waiting') {
     state.phase = 'waiting';
     state.pending = null;
+    state.extra = null;
     state.balls = null;
     state.lastToast = null;
     state.winner = null;
@@ -213,12 +237,19 @@ function requireTurn(state: RoomState, seat: number): void {
   if (state.pending) throw new RoomError('공이 아직 움직이고 있어요');
 }
 
+function parseCue(msg: Record<string, unknown>): { cx?: number; cy?: number } {
+  const { cx, cy } = msg;
+  if (cx === undefined && cy === undefined) return {};
+  if (!finite(cx) || !finite(cy) || cx < 0 || cx > TABLE_W || cy < 0 || cy > TABLE_H) throw new RoomError('흰 공 위치가 올바르지 않아요');
+  return { cx, cy };
+}
+
 export function parseShot(msg: Record<string, unknown>): Omit<Shot, 'seq' | 'by'> {
   const { ang, power, hx, hy } = msg;
   if (!finite(ang) || !finite(power) || !finite(hx) || !finite(hy)) throw new RoomError('샷 정보가 올바르지 않아요');
   if (power < 3 || power > 100) throw new RoomError('힘이 올바르지 않아요');
   if (Math.abs(hx) > 1 || Math.abs(hy) > 1 || Math.hypot(hx, hy) > 1.01) throw new RoomError('당점이 올바르지 않아요');
-  return { ang, power, hx, hy };
+  return { ang, power, hx, hy, ...parseCue(msg) };
 }
 
 /** 치기. 결과가 올 때까지 다음 샷은 받지 않는다. */
@@ -243,6 +274,7 @@ export function parseAim(state: RoomState, seat: number, msg: Record<string, unk
     hx: Math.max(-1, Math.min(1, hx)),
     hy: Math.max(-1, Math.min(1, hy)),
     pulling: pulling === true,
+    ...(state.game === '8' ? parseCue(msg) : {}),
   };
 }
 
@@ -252,7 +284,10 @@ function parseBalls(state: RoomState, value: unknown): Ball[] {
   return want.map((w) => {
     const b = value.find((v) => v && typeof v === 'object' && (v as Ball).id === w.id) as Ball | undefined;
     if (!b || !finite(b.x) || !finite(b.y)) throw new RoomError('공 정보가 올바르지 않아요');
-    if (b.x < -1 || b.x > TABLE_W + 1 || b.y < -1 || b.y > TABLE_H + 1) throw new RoomError('공이 당구대 밖에 있어요');
+    // 포켓볼은 구멍에 들어간 공이 쿠션 선 밖에 있을 수 있다
+    const m = w.kind === 'pool' || state.game === '8' ? 40 : 1;
+    if (b.x < -m || b.x > TABLE_W + m || b.y < -m || b.y > TABLE_H + m) throw new RoomError('공이 당구대 밖에 있어요');
+    if (state.game === '8') return { id: w.id, kind: w.kind, n: w.n ?? 0, in: b.in === true, x: b.x, y: b.y };
     return { id: w.id, kind: w.kind, x: b.x, y: b.y };
   });
 }
@@ -269,6 +304,49 @@ function shortText(v: unknown, max: number): string {
   return typeof v === 'string' ? [...v].slice(0, max).join('') : '';
 }
 
+function parseExtra(v: unknown): PoolExtra {
+  const e = v as Partial<PoolExtra> | null;
+  const grp = (g: unknown) => (g === 'solid' || g === 'stripe' ? g : g === null ? null : undefined);
+  if (!e || !Array.isArray(e.groups) || e.groups.length !== 2) throw new RoomError('포켓볼 정보가 올바르지 않아요');
+  const g0 = grp(e.groups[0]), g1 = grp(e.groups[1]);
+  if (g0 === undefined || g1 === undefined || (g0 && g0 === g1)) throw new RoomError('포켓볼 정보가 올바르지 않아요');
+  return { groups: [g0, g1], bih: e.bih === true, broke: e.broke === true, kitchen: e.kitchen === true };
+}
+
+/** 포켓볼 결과: 차례·승자·공 무리는 친 사람 화면이 정한다. 넣은 공 수는 상대 것도 바뀔 수 있다. */
+function applyPoolResult(state: RoomState, seat: number, msg: Record<string, unknown>, p: Shot, now: number): void {
+  const balls = parseBalls(state, msg.balls);
+  if (!Array.isArray(msg.stats) || msg.stats.length !== 2) throw new RoomError('점수 정보가 올바르지 않아요');
+  const stats: [PlayerStat, PlayerStat] = [parseStat(msg.stats[0]), parseStat(msg.stats[1])];
+  stats[0].shots = state.stats[0].shots;
+  stats[1].shots = state.stats[1].shots;
+  if (stats[0].score > 15 || stats[1].score > 15) throw new RoomError('점수 정보가 올바르지 않아요');
+  const cur = msg.cur;
+  if (cur !== 0 && cur !== 1) throw new RoomError('차례 정보가 올바르지 않아요');
+  const winner = msg.winner;
+  if (winner !== null && winner !== undefined && winner !== 0 && winner !== 1) throw new RoomError('승자 정보가 올바르지 않아요');
+  state.extra = parseExtra(msg.extra);
+  state.balls = balls;
+  state.stats = stats;
+  state.seq = p.seq;
+  state.pending = null;
+  state.lastToast = toastOf(msg.toast);
+  if (winner === 0 || winner === 1) {
+    state.phase = 'finished';
+    state.winner = winner;
+    state.cur = winner;
+  } else {
+    state.cur = cur;
+  }
+  void seat;
+  state.updatedAt = now;
+}
+
+function toastOf(t: unknown): Toast {
+  const v = t as Toast | null;
+  return { msg: shortText(v?.msg, 20), sub: shortText(v?.sub, 60), tone: shortText(v?.tone, 8) };
+}
+
 /**
  * 샷 결과. 친 사람만, 방금 친 샷 번호로 보낼 수 있다.
  * 점수 계산은 친 사람 화면이 하고, 서버는 형식과 범위만 확인한다. (친구끼리 하는 게임이라 이 정도로 둔다)
@@ -276,6 +354,7 @@ function shortText(v: unknown, max: number): string {
 export function applyResult(state: RoomState, seat: number, msg: Record<string, unknown>, now: number): void {
   const p = state.pending;
   if (!p || p.by !== seat || msg.seq !== p.seq) throw new RoomError('이미 처리된 샷이에요');
+  if (state.game === '8') return applyPoolResult(state, seat, msg, p, now);
   const balls = parseBalls(state, msg.balls);
   if (!Array.isArray(msg.stats) || msg.stats.length !== 2) throw new RoomError('점수 정보가 올바르지 않아요');
   const stats: [PlayerStat, PlayerStat] = [parseStat(msg.stats[0]), parseStat(msg.stats[1])];
@@ -294,7 +373,7 @@ export function applyResult(state: RoomState, seat: number, msg: Record<string, 
   state.stats = stats;
   state.seq = p.seq;
   state.pending = null;
-  state.lastToast = { msg: shortText((msg.toast as Toast)?.msg, 20), sub: shortText((msg.toast as Toast)?.sub, 60), tone: shortText((msg.toast as Toast)?.tone, 8) };
+  state.lastToast = toastOf(msg.toast);
   if (over) {
     state.phase = 'finished';
     state.winner = seat;
@@ -334,6 +413,7 @@ export function viewFor(state: RoomState, seat: number, connected: [boolean, boo
     stats: state.stats,
     seq: state.seq,
     pending: state.pending,
+    extra: state.extra,
     lastToast: state.lastToast,
     winner: state.winner,
     rematch: state.rematch,

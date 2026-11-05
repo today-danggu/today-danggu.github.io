@@ -179,6 +179,7 @@ body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-item
 body.m .modal.pop{justify-items:end;padding-right:calc(136px + env(safe-area-inset-right,0px));padding-block:8px;align-items:center}
 body.m .modal.pop .sheet{padding:14px;gap:10px;width:min(300px,100%);max-height:100%;overflow:auto}
 body.m #tipPadBig{width:min(180px,48vh);height:min(180px,48vh)}
+.placebtn{position:absolute;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);border:0;border-radius:999px;padding:10px 22px;background:var(--brass);color:var(--brass-ink);font-family:var(--f-display);font-size:18px;letter-spacing:.04em;cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.4);z-index:4}
 .pop-hint{font-size:11px;color:var(--muted);text-align:center}
 #thickBig{width:100%;aspect-ratio:560/320;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;touch-action:none;cursor:ew-resize}
 .fine-3{grid-template-columns:repeat(3,1fr)}
@@ -226,6 +227,7 @@ body.m .loupe{--lz:128px}
       <canvas id="table" tabindex="0" aria-label="당구대. 끌어서 조준"></canvas>
       <div class="toast" id="toast"><b></b><span></span></div>
       <canvas class="loupe" id="loupe" hidden aria-hidden="true"></canvas>
+      <button class="placebtn" id="placeBtn" type="button" hidden>여기에 놓기</button>
     </div>
 
     <div class="rack">
@@ -343,6 +345,7 @@ body.m .loupe{--lz:128px}
       <div class="seg" id="segGame">
         <button type="button" data-v="4">4구<small>빨간 공 2개</small></button>
         <button type="button" data-v="3">3구<small>쓰리쿠션</small></button>
+        <button type="button" data-v="8">포켓볼<small>8볼</small></button>
       </div>
     </div>
     <div class="ctl">
@@ -413,7 +416,24 @@ body.m .loupe{--lz:128px}
 <script>
 //PHYS-START
 // 단위: 테이블 긴 쪽 1000 = 2540mm (중대). 공 지름 61.5mm → 반지름 12.1
-const W = 1000, H = 500, R = 12.1, RAIL = 52;
+const W = 1000, H = 500, RAIL = 52;
+// 공 반지름: 캐롬 61.5mm, 포켓볼 57.15mm (포켓볼 대대 2540mm 기준)
+const R_CAROM = 12.1, R_POOL = 11.25;
+let R = R_CAROM;
+let POOL = false;              // 포켓볼이면 구멍이 6개 있다
+/* 포켓: 모서리 4개, 긴 쿠션 가운데 2개. 구멍 입구 근처에는 쿠션이 없다 */
+const CORNER_MOUTH = () => 2.2 * R, SIDE_MOUTH = () => 1.9 * R;
+function pocketList() {
+  const c = 0.45 * R, sd = 0.9 * R;
+  return [[-c, -c], [W / 2, -sd], [W + c, -c], [-c, H + c], [W / 2, H + sd], [W + c, H + c]];
+}
+function railOpen(axis, pos) {
+  // axis 'x': 왼·오른 쿠션(위치는 y), 'y': 위·아래 쿠션(위치는 x)
+  if (!POOL) return false;
+  const cm = CORNER_MOUTH();
+  if (axis === 'x') return pos < cm || pos > H - cm;
+  return pos < cm || pos > W - cm || Math.abs(pos - W / 2) < SIDE_MOUTH();
+}
 const DT = 1 / 600;            // 물리 스텝(초)
 const MU_S = 760;              // 미끄러짐 감속
 const MU_R = 62;               // 구름 감속
@@ -423,7 +443,7 @@ const SPIN_DECAY = 0.9;
 const VMAX = 2600;
 const GUIDE_LEN = 280;         // 튕긴 뒤 안내선 최대 길이
 
-function mkBall(id, kind, x, y) { return { id, kind, x, y, vx: 0, vy: 0, wx: 0, wy: 0, s: 0 }; }
+function mkBall(id, kind, x, y, n) { return { id, kind, x, y, n: n || 0, in: false, vx: 0, vy: 0, wx: 0, wy: 0, s: 0 }; }
 
 // hx: -1(왼쪽)~1(오른쪽), hy: -1(아래, 끌기)~1(위, 밀기)
 function strike(b, dx, dy, speed, hx, hy) {
@@ -448,7 +468,7 @@ function cushion(b, nx, ny) {
 
 function step(balls, dt, ev) {
   for (const b of balls) {
-    if (isStopped(b)) continue;
+    if (b.in || isStopped(b)) continue;
     const sx = b.vx - b.wx, sy = b.vy - b.wy, sl = Math.hypot(sx, sy);
     if (sl > 1e-3) {
       const a = MU_S * dt;
@@ -468,13 +488,21 @@ function step(balls, dt, ev) {
     b.s *= Math.exp(-SPIN_DECAY * dt);
     if (Math.hypot(b.vx, b.vy) < 1.5 && Math.hypot(b.vx - b.wx, b.vy - b.wy) < 1.5) { b.vx = b.vy = b.wx = b.wy = 0; b.s = 0; }
     b.x += b.vx * dt; b.y += b.vy * dt;
-    if (b.x < R && b.vx < 0) { b.x = 2 * R - b.x; cushion(b, -1, 0); ev.push({ t: 'c', id: b.id }); }
-    else if (b.x > W - R && b.vx > 0) { b.x = 2 * (W - R) - b.x; cushion(b, 1, 0); ev.push({ t: 'c', id: b.id }); }
-    if (b.y < R && b.vy < 0) { b.y = 2 * R - b.y; cushion(b, 0, -1); ev.push({ t: 'c', id: b.id }); }
-    else if (b.y > H - R && b.vy > 0) { b.y = 2 * (H - R) - b.y; cushion(b, 0, 1); ev.push({ t: 'c', id: b.id }); }
+    if (b.x < R && b.vx < 0 && !railOpen('x', b.y)) { b.x = 2 * R - b.x; cushion(b, -1, 0); ev.push({ t: 'c', id: b.id }); }
+    else if (b.x > W - R && b.vx > 0 && !railOpen('x', b.y)) { b.x = 2 * (W - R) - b.x; cushion(b, 1, 0); ev.push({ t: 'c', id: b.id }); }
+    if (b.y < R && b.vy < 0 && !railOpen('y', b.x)) { b.y = 2 * R - b.y; cushion(b, 0, -1); ev.push({ t: 'c', id: b.id }); }
+    else if (b.y > H - R && b.vy > 0 && !railOpen('y', b.x)) { b.y = 2 * (H - R) - b.y; cushion(b, 0, 1); ev.push({ t: 'c', id: b.id }); }
+    if (POOL) {
+      // 구멍 입구를 지나 쿠션 선 밖으로 나가거나 구멍 가운데에 가까우면 들어간다
+      const out = R * 0.3;
+      let sunk = b.x < -out || b.x > W + out || b.y < -out || b.y > H + out;
+      if (!sunk) for (const q of pocketList()) if (Math.hypot(b.x - q[0], b.y - q[1]) < 1.55 * R) { sunk = true; break; }
+      if (sunk) { b.in = true; b.vx = b.vy = b.wx = b.wy = 0; b.s = 0; ev.push({ t: 'p', id: b.id }); }
+    }
   }
   for (let i = 0; i < balls.length; i++) for (let j = i + 1; j < balls.length; j++) {
     const a = balls[i], b = balls[j];
+    if (a.in || b.in) continue;
     let dx = b.x - a.x, dy = b.y - a.y; const d = Math.hypot(dx, dy);
     if (d >= 2 * R || d === 0) continue;
     const nx = dx / d, ny = dy / d;
@@ -489,7 +517,7 @@ function step(balls, dt, ev) {
   }
 }
 
-function touches(e, id) { return e.t === 'c' ? e.id === id : (e.a === id || e.b === id); }
+function touches(e, id) { return e.t === 'c' || e.t === 'p' ? e.id === id : (e.a === id || e.b === id); }
 
 // 안내선: 실제 물리를 복제해서 돌리고, 수구가 처음 부딪힌 뒤 각 공의 다음 충돌 전까지만 기록
 function simulateGuide(balls, cueId, dx, dy, speed, hx, hy) {
@@ -531,6 +559,16 @@ function simulateGuide(balls, cueId, dx, dy, speed, hx, hy) {
 /* ---------- 게임 상태 ---------- */
 const COLORS = { white: '#f3efe3', yellow: '#efbf2c', red: '#cc2f29' };
 const NAMES = { white: '흰 공', yellow: '노란 공', red: '빨간 공' };
+/* 포켓볼 공 색 (1~8 단색, 9~15 줄무늬는 n-8과 같은 색) */
+const POOL_COLORS = { 1: '#f2c12e', 2: '#2556c4', 3: '#d23a2c', 4: '#6b3fa0', 5: '#f07c22', 6: '#1f8a4c', 7: '#8a2b2b', 8: '#1b1b1b' };
+function ballColor(b) { return b.kind === 'pool' ? POOL_COLORS[b.n > 8 ? b.n - 8 : b.n] : COLORS[b.kind]; }
+function ballName(b) { return b.kind === 'pool' ? `${b.n}번 공` : NAMES[b.kind]; }
+function groupOf(b) { return b.kind !== 'pool' ? null : b.n === 8 ? 'eight' : b.n < 8 ? 'solid' : 'stripe'; }
+const GROUP_NAME = { solid: '솔리드(1~7)', stripe: '스트라이프(9~15)' };
+function gameLabel(g) { return g === '4' ? '4구' : g === '3' ? '3구 (쓰리쿠션)' : '포켓볼 (8볼)'; }
+/* 포켓볼 진행 상태: 각 자리의 공 무리, 프리볼(흰 공 놓기), 브레이크 했는지, 놓는 곳 제한(브레이크 전) */
+let pool = { groups: [null, null], bih: true, broke: false, kitchen: true };
+const KITCHEN_X = 250;
 let cfg = { mode: 'solo', game: '4', target: 10, layout: 'auto' };
 let isM = false;
 const CONFIG = window.DANGGU_CONFIG || {};
@@ -546,14 +584,27 @@ const ball = id => balls.find(b => b.id === id);
 const cueBall = () => ball(players[cur].ball);
 let net = null; // 온라인 같이하기 연결 (아래 '온라인' 부분)
 /** 지금 내가 조작할 수 있는지. 온라인이면 내 차례이고 공이 멈춰 있을 때만. */
-function canAct() {
-  if (phase !== 'aim') return false;
+function myTurnOnline() {
   if (!net) return true;
   const s = net.state;
   return !!s && s.phase === 'playing' && s.cur === net.seat && !s.pending && net.ready;
 }
+function canAct() { return phase === 'aim' && myTurnOnline(); }
+/** 포켓볼 프리볼: 흰 공을 놓는 단계 */
+function canPlace() { return phase === 'place' && myTurnOnline(); }
 
+function setGeometry() { POOL = cfg.game === '8'; R = POOL ? R_POOL : R_CAROM; }
+function rackPool() {
+  const rows = [[1], [9, 2], [10, 8, 3], [11, 4, 12, 5], [6, 13, 7, 14, 15]];
+  const d = 2 * R + 0.05;
+  balls = [mkBall('C', 'white', KITCHEN_X, H / 2)];
+  rows.forEach((row, i) => row.forEach((num, j) => {
+    balls.push(mkBall('B' + num, 'pool', 750 + i * d * Math.sqrt(3) / 2, H / 2 + (j - (row.length - 1) / 2) * d, num));
+  }));
+}
 function rack() {
+  setGeometry();
+  if (POOL) { rackPool(); pool = { groups: [null, null], bih: true, broke: false, kitchen: true }; return; }
   if (cfg.game === '4') balls = [mkBall('W', 'white', 180, 330), mkBall('Y', 'yellow', 180, 170), mkBall('R1', 'red', 290, 250), mkBall('R2', 'red', 750, 250)];
   else balls = [mkBall('W', 'white', 250, 325), mkBall('Y', 'yellow', 250, 250), mkBall('R1', 'red', 750, 250)];
 }
@@ -561,14 +612,22 @@ function rack() {
 function newGame() {
   rack();
   const mk = (name, ballId, oppId) => ({ name, ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0 });
-  players = cfg.mode === 'solo' ? [mk('나', 'W', 'Y')] : [mk('플레이어 1', 'W', 'Y'), mk('플레이어 2', 'Y', 'W')];
-  cur = 0; phase = 'aim';
-  $('metaLine').textContent = `${cfg.game === '4' ? '4구' : '3구 (쓰리쿠션)'} · ${cfg.mode === 'solo' ? '혼자하기' : '같이하기'} · 목표 ${cfg.target}점`;
+  if (POOL) players = cfg.mode === 'solo' ? [mk('나', 'C')] : [mk('플레이어 1', 'C'), mk('플레이어 2', 'C')];
+  else players = cfg.mode === 'solo' ? [mk('나', 'W', 'Y')] : [mk('플레이어 1', 'W', 'Y'), mk('플레이어 2', 'Y', 'W')];
+  cur = 0; phase = POOL ? 'place' : 'aim';
+  $('metaLine').textContent = `${gameLabel(cfg.game)} · ${cfg.mode === 'solo' ? '혼자하기' : '같이하기'}${POOL ? '' : ` · 목표 ${cfg.target}점`}`;
   autoAim(); renderScore(); syncUI();
+  if (POOL) toast('브레이크', '흰 공을 왼쪽 선 안에 놓고 치세요', '');
 }
 
-function objectIds() { return balls.filter(b => b.id !== players[cur].ball).map(b => b.id); }
+function objectIds() { return balls.filter(b => b.id !== players[cur].ball && !b.in).map(b => b.id); }
 function validTargets() {
+  if (POOL) {
+    const g = cfg.mode === 'solo' ? null : pool.groups[cur];
+    const live = balls.filter(b => b.kind === 'pool' && !b.in);
+    const mine = live.filter(b => (g ? groupOf(b) === g : b.n !== 8));
+    return (mine.length ? mine : live).map(b => b.id);
+  }
   return cfg.game === '4' ? balls.filter(b => b.kind === 'red').map(b => b.id) : objectIds();
 }
 
@@ -592,7 +651,7 @@ function rayInfo() {
   const c = cueBall(); const dx = Math.cos(aim.ang), dy = Math.sin(aim.ang);
   let best = null;
   for (const o of balls) {
-    if (o === c) continue;
+    if (o === c || o.in) continue;
     const Dx = o.x - c.x, Dy = o.y - c.y; const proj = Dx * dx + Dy * dy; if (proj <= 0) continue;
     const perp = dx * Dy - dy * Dx; if (Math.abs(perp) >= 2 * R) continue;
     const dist = proj - Math.sqrt(4 * R * R - perp * perp);
@@ -616,7 +675,7 @@ function syncUI() {
     aim.target = info.id; aim.thick = -info.perp / (2 * R);
     const f = 1 - Math.abs(aim.thick);
     const side = Math.abs(aim.thick) < 0.02 ? '정면' : (aim.thick < 0 ? '왼쪽 면' : '오른쪽 면');
-    $('thickVal').textContent = `${NAMES[ball(info.id).kind]} · ${side} ${fracLabel(f)} (${Math.round(f * 100)}%)`;
+    $('thickVal').textContent = `${ballName(ball(info.id))} · ${side} ${fracLabel(f)} (${Math.round(f * 100)}%)`;
   } else $('thickVal').textContent = '쿠션 먼저';
   thickInfo = info;
   if (info) {
@@ -638,10 +697,12 @@ function syncUI() {
   $('tipVal').textContent = tipText; $('bigTipVal').textContent = tipText;
   $('mTipVal').textContent = parts.length ? parts.map(t => t.replace('오른쪽', '우').replace('왼쪽', '좌').replace('상단', '상').replace('하단', '하')).join(' ') : '중앙';
   drawPad(); drawThick();
+  $('placeBtn').hidden = !canPlace();
 }
 
 function renderScore() {
   const box = $('score'); box.innerHTML = '';
+  if (POOL) return renderPoolScore(box);
   players.forEach((p, i) => {
     const on = i === cur && cfg.mode !== 'solo';
     const el = document.createElement('div'); el.className = 'pcard' + (on ? ' on' : '');
@@ -654,13 +715,34 @@ function renderScore() {
   });
 }
 
+function poolScores() {
+  players.forEach((p, i) => {
+    const g = cfg.mode === 'solo' ? null : pool.groups[i];
+    p.score = cfg.mode !== 'solo' && !g ? 0 : balls.filter(b => b.kind === 'pool' && b.in && (g ? groupOf(b) === g : true)).length;
+  });
+}
+function renderPoolScore(box) {
+  players.forEach((p, i) => {
+    const on = i === cur && cfg.mode !== 'solo';
+    const g = cfg.mode === 'solo' ? null : pool.groups[i];
+    const dot = g === 'solid' ? POOL_COLORS[1] : g === 'stripe' ? `linear-gradient(#f3efe3 0 30%, ${POOL_COLORS[2]} 30% 70%, #f3efe3 70%)` : COLORS.white;
+    const of = cfg.mode === 'solo' ? 15 : 7;
+    const el = document.createElement('div'); el.className = 'pcard' + (on ? ' on' : '');
+    el.innerHTML = `<span class="pdot" style="background:${dot}"></span>
+      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
+      <div class="psub">${cfg.mode === 'solo' ? '15개 모두 넣기' : g ? GROUP_NAME[g] : '오픈 (아직 안 정해짐)'} · 샷 ${p.shots}</div></div>
+      <div class="pts">${Math.min(p.score, of)}<small>/ ${of}</small></div>`;
+    box.appendChild(el);
+  });
+}
+
 /* ---------- 샷 ---------- */
 function speed() { return VMAX * aim.power / 100; }
 
 function shoot() {
   if (!canAct()) return;
   hideLoupe(0);
-  if (net) { net.myShot = net.state.seq + 1; netSend({ type: 'shot', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy }); }
+  if (net) { const c = cueBall(); net.myShot = net.state.seq + 1; netSend({ type: 'shot', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
   phase = 'stroke'; syncUI();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   stroke = { t0: performance.now(), dur: reduce ? 0 : 140 };
@@ -669,7 +751,7 @@ function shoot() {
 function release() {
   const c = cueBall();
   strike(c, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
-  shotLog = { cue: c.id, hits: [], cush: 0 };
+  shotLog = { cue: c.id, hits: [], cush: 0, potted: [] };
   players[cur].shots++;
   phase = 'moving'; stroke = null; guide = null;
 }
@@ -677,6 +759,7 @@ function release() {
 function logEvents(ev) {
   for (const e of ev) {
     if (e.t === 'c' && e.id === shotLog.cue) shotLog.cush++;
+    if (e.t === 'p') shotLog.potted.push(e.id);
     if (e.t === 'b' && (e.a === shotLog.cue || e.b === shotLog.cue)) {
       const other = e.a === shotLog.cue ? e.b : e.a;
       if (!shotLog.hits.some(h => h.id === other)) shotLog.hits.push({ id: other, cush: shotLog.cush });
@@ -684,7 +767,84 @@ function logEvents(ev) {
   }
 }
 
+/* ---------- 8볼 규칙 ---------- */
+function freeSpot(x, y) {
+  // 다른 공과 겹치지 않는 가까운 자리
+  for (let r = 0; r < 300; r += 4) for (let a = 0; a < 6.28; a += 0.5) {
+    const px_ = x + Math.cos(a) * r, py_ = y + Math.sin(a) * r;
+    if (px_ < R || px_ > W - R || py_ < R || py_ > H - R) continue;
+    if (balls.every(b => b.in || Math.hypot(b.x - px_, b.y - py_) > 2 * R + 0.5)) return [px_, py_];
+    if (r === 0) break;
+  }
+  return [x, y];
+}
+function evaluatePool() {
+  const L = shotLog, p = players[cur], solo = cfg.mode === 'solo';
+  const g = solo ? null : pool.groups[cur];
+  const first = L.hits[0] ? ball(L.hits[0].id) : null;
+  const potted = L.potted.map(ball);
+  const scratch = potted.some(b => b.kind === 'white');
+  const objs = potted.filter(b => b.kind === 'pool');
+  const eightIn = objs.some(b => b.n === 8);
+  const isBreak = !pool.broke;
+  const mineLeftBefore = balls.filter(b => b.kind === 'pool' && b.n !== 8 && (g ? groupOf(b) === g : true) && (!b.in || objs.includes(b))).length;
+  const cleared = (g || solo) ? mineLeftBefore === 0 : false;
+  let foul = null;
+  if (!first) foul = '아무 공도 맞히지 못했어요';
+  else if (!isBreak) {
+    if (first.n === 8 && !cleared) foul = '8번 공을 먼저 맞혔어요';
+    else if (g && !cleared && groupOf(first) !== g) foul = `내 공(${g === 'solid' ? '솔리드' : '스트라이프'})을 먼저 맞혀야 해요`;
+  }
+  if (!foul && scratch) foul = '흰 공이 들어갔어요';
+  if (scratch && !foul) foul = '흰 공이 들어갔어요';
+  if (scratch && foul !== '흰 공이 들어갔어요') foul += ' · 흰 공도 들어갔어요';
+
+  let winner = null, lost = false, msg, sub, tone, keep = false;
+  if (eightIn && isBreak) {
+    // 브레이크에 8번이 들어가면 제자리에 다시 놓는다
+    const e = ball('B8'); e.in = false; [e.x, e.y] = freeSpot(750, H / 2);
+  } else if (eightIn) {
+    if (foul || !cleared) { lost = true; winner = solo ? null : 1 - cur; }
+    else winner = cur;
+  }
+  pool.broke = true;
+  if (!solo && !g && !isBreak && !foul && winner === null && !lost) {
+    const firstObj = objs.find(b => b.n !== 8);
+    if (firstObj) { pool.groups[cur] = groupOf(firstObj); pool.groups[1 - cur] = groupOf(firstObj) === 'solid' ? 'stripe' : 'solid'; }
+  }
+  const g2 = solo ? null : pool.groups[cur];
+  const mine = objs.filter(b => b.n !== 8 && (g2 ? groupOf(b) === g2 : true));
+  if (winner === null && !lost) {
+    if (foul) { msg = '파울'; sub = foul + (solo ? ' · 흰 공을 놓고 치세요' : ' · 상대 프리볼'); tone = 'bad'; }
+    else if (isBreak && objs.length) { keep = true; msg = '브레이크 성공'; sub = `${objs.length}개 들어갔어요`; tone = 'good'; }
+    else if (mine.length) { keep = true; msg = '넣었어요'; sub = mine.map(b => b.n).join(', ') + '번' + (g2 && !g ? ` · ${GROUP_NAME[g2]} 확정` : ''); tone = 'good'; }
+    else { msg = '실패'; sub = objs.length ? `${objs.map(b => b.n).join(', ')}번은 상대 공이에요` : '넣은 공이 없어요'; tone = 'bad'; }
+  }
+  if (scratch) { const c = ball('C'); c.in = false; [c.x, c.y] = freeSpot(KITCHEN_X, H / 2); }
+  pool.bih = !!foul; pool.kitchen = false;
+  if (keep) { p.run += mine.length || objs.length; p.high = Math.max(p.high, p.run); } else p.run = 0;
+  poolScores();
+  if (winner === null && !lost && !keep && !solo) cur = 1 - cur;
+  const over = winner !== null || lost;
+  if (over) {
+    if (lost && solo) { msg = '8번 공이 일찍 들어갔어요'; sub = '다른 공을 다 넣은 뒤에 8번을 넣어야 해요'; tone = 'bad'; }
+    else if (lost) { msg = '패배'; sub = foul ? `8번을 넣으며 파울 (${foul})` : '내 공을 다 넣기 전에 8번이 들어갔어요'; tone = 'bad'; }
+    else { msg = '8번 공 성공'; sub = '승리!'; tone = 'good'; }
+  }
+  if (net) sendResult(msg, sub, tone, { cur: over ? (winner ?? cur) : cur, winner: over ? winner ?? 1 - net.seat : null });
+  if (over) {
+    if (winner !== null) cur = winner;
+    renderScore(); toast(msg, sub, tone);
+    return gameOver(lost && solo ? 'lost' : null, msg, sub);
+  }
+  if (!solo && !keep) sub += net ? (cur === net.seat ? ' · 내 차례' : ` · ${players[cur].name} 차례`) : ` · ${players[cur].name} 차례`;
+  toast(msg, sub, tone);
+  phase = pool.bih && myTurnOnline() ? 'place' : 'aim';
+  renderScore(); autoAim(); if (net) netStatus();
+}
+
 function evaluate() {
+  if (POOL) return evaluatePool();
   const p = players[cur]; const L = shotLog; let scored = false, msg, sub, tone;
   const hitNames = L.hits.map(h => NAMES[ball(h.id).kind]);
   if (cfg.game === '4') {
@@ -711,12 +871,18 @@ function evaluate() {
   phase = 'aim'; renderScore(); autoAim(); if (net) netStatus();
 }
 
-function gameOver() {
+function gameOver(kind, msg, sub) {
   phase = 'over';
   const p = players[cur];
   if (net) return onlineOver();
   $('again').disabled = false; $('again').textContent = '다시 하기'; $('overMenu').textContent = '게임 설정';
-  if (cfg.mode === 'solo') {
+  if (POOL && cfg.mode === 'solo') {
+    if (kind === 'lost') { $('overTitle').innerHTML = '아쉽게 <span>실패</span>'; $('overText').innerHTML = `${esc(sub || '')}<br>${p.score}개를 넣었어요 (샷 ${p.shots}).`; }
+    else { $('overTitle').innerHTML = '15개 <span>모두 넣었어요</span>'; $('overText').innerHTML = `<b>${p.shots}번</b>의 샷으로 끝냈어요. 연속 최고 <b>${p.high}</b>개.`; }
+  } else if (POOL) {
+    $('overTitle').innerHTML = `${esc(p.name)} <span>승리</span>`;
+    $('overText').innerHTML = (sub ? esc(sub) + '<br>' : '') + players.map((q, i) => `${esc(q.name)} <b>${q.score}개</b> ${pool.groups[i] ? GROUP_NAME[pool.groups[i]] : ''} (샷 ${q.shots})`).join('<br>');
+  } else if (cfg.mode === 'solo') {
     $('overTitle').innerHTML = `${cfg.target}점 <span>달성</span>`;
     $('overText').innerHTML = `<b>${p.shots}번</b>의 샷으로 ${cfg.target}점을 쳤어요. 하이런 <b>${p.high}</b>.`;
   } else {
@@ -782,14 +948,44 @@ function drawTable() {
   // 스팟
   ctx.fillStyle = 'rgba(255,255,255,.35)';
   for (const x of [250, 500, 750]) { ctx.beginPath(); ctx.arc(x, H / 2, 1.8, 0, 7); ctx.fill(); }
+  if (POOL) {
+    // 브레이크 전 흰 공 놓는 선
+    if (pool.kitchen) { ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = px(1.2); ctx.beginPath(); ctx.moveTo(KITCHEN_X, 0); ctx.lineTo(KITCHEN_X, H); ctx.stroke(); }
+    // 구멍
+    pocketList().forEach((q, i) => {
+      const side = i === 1 || i === 4, rr = side ? 1.75 * R : 2.0 * R;
+      ctx.fillStyle = '#3a2416'; ctx.beginPath(); ctx.arc(q[0], q[1], rr + 4, 0, 7); ctx.fill();
+      const pg = ctx.createRadialGradient(q[0], q[1], rr * .2, q[0], q[1], rr);
+      pg.addColorStop(0, '#000'); pg.addColorStop(1, '#16110d');
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(q[0], q[1], rr, 0, 7); ctx.fill();
+    });
+  }
 }
 
 function drawBall(b) {
+  if (b.in) return;
+  if (b.kind === 'pool') return drawPoolBall(b);
   ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(b.x + 3, b.y + 4, R, R * .9, 0, 0, 7); ctx.fill();
   const g = ctx.createRadialGradient(b.x - R * .35, b.y - R * .4, R * .1, b.x, b.y, R * 1.05);
   const base = COLORS[b.kind];
   g.addColorStop(0, '#ffffff'); g.addColorStop(.28, base); g.addColorStop(1, shade(base, -.45));
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, R, 0, 7); ctx.fill();
+}
+function drawPoolBall(b) {
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.beginPath(); ctx.ellipse(b.x + 3, b.y + 4, R, R * .9, 0, 0, 7); ctx.fill();
+  const col = ballColor(b), stripe = b.n > 8;
+  ctx.save(); ctx.beginPath(); ctx.arc(b.x, b.y, R, 0, 7); ctx.clip();
+  ctx.fillStyle = stripe ? '#f3efe3' : col; ctx.fillRect(b.x - R, b.y - R, 2 * R, 2 * R);
+  if (stripe) { ctx.fillStyle = col; ctx.fillRect(b.x - R, b.y - R * .55, 2 * R, R * 1.1); }
+  const g = ctx.createRadialGradient(b.x - R * .35, b.y - R * .4, R * .05, b.x, b.y, R * 1.05);
+  g.addColorStop(0, 'rgba(255,255,255,.75)'); g.addColorStop(.3, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.45)');
+  ctx.fillStyle = g; ctx.fillRect(b.x - R, b.y - R, 2 * R, 2 * R);
+  ctx.restore();
+  if (R * pxScale > 6) {
+    ctx.fillStyle = '#f7f3ea'; ctx.beginPath(); ctx.arc(b.x, b.y, R * .46, 0, 7); ctx.fill();
+    ctx.fillStyle = '#16120d'; ctx.font = `700 ${R * .58}px "IBM Plex Sans KR", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(b.n), b.x, b.y + R * .03);
+  }
 }
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
@@ -850,6 +1046,10 @@ function draw() {
   if (phase === 'aim' || phase === 'stroke') {
     const c = cueBall(); ctx.strokeStyle = 'rgba(212,166,75,.9)'; ctx.lineWidth = px(2);
     ctx.beginPath(); ctx.arc(c.x, c.y, R + px(5), 0, 7); ctx.stroke();
+  }
+  if (phase === 'place') {
+    const c = cueBall(); ctx.strokeStyle = 'rgba(212,166,75,.95)'; ctx.lineWidth = px(2); ctx.setLineDash([px(5), px(4)]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, R + px(9), 0, 7); ctx.stroke(); ctx.setLineDash([]);
   }
   for (const b of balls) drawBall(b);
   if (phase === 'aim' || phase === 'stroke') drawStick();
@@ -982,7 +1182,16 @@ function aimAt(p) {
   if (Math.hypot(p.x - c.x, p.y - c.y) < R * 1.5) return;
   aim.ang = Math.atan2(p.y - c.y, p.x - c.x); guideDirty = true; syncUI();
 }
+function placeAt(p) {
+  const c = cueBall();
+  const x = Math.max(R, Math.min(pool.kitchen ? KITCHEN_X : W - R, p.x)), y = Math.max(R, Math.min(H - R, p.y));
+  if (balls.some(b => b !== c && !b.in && Math.hypot(b.x - x, b.y - y) < 2 * R + 0.5)) return;
+  c.x = x; c.y = y; c.in = false; guideDirty = true;
+}
+function confirmPlace() { if (!canPlace()) return; phase = 'aim'; autoAim(); }
+$('placeBtn').addEventListener('click', confirmPlace);
 cv.addEventListener('pointerdown', e => {
+  if (canPlace()) { cv.setPointerCapture(e.pointerId); drag = { mode: 'place' }; placeAt(toWorld(e.clientX, e.clientY)); return; }
   if (!canAct()) return;
   cv.setPointerCapture(e.pointerId);
   const p = toWorld(e.clientX, e.clientY);
@@ -997,6 +1206,7 @@ cv.addEventListener('pointermove', e => {
   if (!drag) return;
   const p = toWorld(e.clientX, e.clientY);
   if (drag.mode === 'aim') return aimAt(p);
+  if (drag.mode === 'place') return placeAt(p);
   if (drag.mode === 'rot') {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 6) drag.moved = true;
     const a = angTo(p); let d = a - drag.prev; d = Math.atan2(Math.sin(d), Math.cos(d)); drag.prev = a;
@@ -1013,6 +1223,7 @@ cv.addEventListener('pointermove', e => {
 function endDrag(cancel) {
   if (!drag) return;
   const d = drag; drag = null; cv.classList.remove('grab');
+  if (d.mode === 'place') return;
   if (d.mode === 'rot' || d.mode === 'aim') hideLoupe(700);
   if (d.mode === 'rot') { if (!d.moved && !cancel) aimAt(d.p0); return; }
   if (d.mode !== 'pull') return;
@@ -1080,7 +1291,7 @@ function drawThickOn(tv) {
   const ox = cx, qx = cx + aim.thick * 2 * r;
   // 목적구
   let g = tctx.createRadialGradient(ox - r * .3, cy - r * .35, r * .1, ox, cy, r);
-  g.addColorStop(0, '#fff'); g.addColorStop(.3, COLORS[o.kind]); g.addColorStop(1, shade(COLORS[o.kind], -.45));
+  g.addColorStop(0, '#fff'); g.addColorStop(.3, ballColor(o)); g.addColorStop(1, shade(ballColor(o), -.45));
   tctx.fillStyle = g; tctx.beginPath(); tctx.arc(ox, cy, r, 0, 7); tctx.fill();
   // 겹치는 면(두께) 강조
   tctx.save(); tctx.beginPath(); tctx.arc(ox, cy, r, 0, 7); tctx.clip();
@@ -1100,6 +1311,7 @@ document.addEventListener('keydown', e => {
   if (!$('menu').hidden || !$('over').hidden || !$('tut').hidden || !$('spinPop').hidden || !$('thickPop').hidden || !$('lobby').hidden) return;
   if (e.key === 'ArrowLeft') { rotate(e.shiftKey ? -1 : -0.1); e.preventDefault(); }
   else if (e.key === 'ArrowRight') { rotate(e.shiftKey ? 1 : 0.1); e.preventDefault(); }
+  else if (e.code === 'Space' && canPlace()) { confirmPlace(); e.preventDefault(); }
   else if (!canAct()) return;
   else if (e.key === 'ArrowUp') { aim.power = Math.min(100, aim.power + 1); guideDirty = true; syncUI(); e.preventDefault(); }
   else if (e.key === 'ArrowDown') { aim.power = Math.max(5, aim.power - 1); guideDirty = true; syncUI(); e.preventDefault(); }
@@ -1209,6 +1421,12 @@ function segBind(id, key, conv) {
   paint();
 }
 function paintRules() {
+  if (cfg.game === '8') {
+    $('rules').innerHTML = cfg.mode === 'solo'
+      ? '<b>포켓볼 혼자하기</b> — 15개를 모두 넣으면 끝. <b>8번은 마지막</b>에 넣어야 해요. 흰 공이 들어가거나 공을 못 맞히면 흰 공을 원하는 곳에 놓고 다시 쳐요.'
+      : '<b>8볼</b> — 처음 넣은 공으로 <b>솔리드(1~7)·스트라이프(9~15)</b>가 정해져요. 내 공을 다 넣고 <b>8번</b>을 넣으면 승리. 내 공을 먼저 맞혀야 하고, 흰 공이 들어가는 등 파울이면 상대가 흰 공을 원하는 곳에 놓고 쳐요. 8번이 일찍 들어가면 패배.';
+    return;
+  }
   $('rules').innerHTML = cfg.game === '4'
     ? `<b>4구</b> — 내 공으로 <b>빨간 공 2개</b>를 모두 맞히면 1점, 계속 칩니다. 상대 공을 맞히면 <b>파울 −1</b>. ${cfg.mode !== 'solo' ? '실패·파울이면 차례가 넘어가요.' : '혼자하기는 노란 공이 상대 공이에요.'}`
     : `<b>3구 (쓰리쿠션)</b> — 내 공이 두 공을 모두 맞히되, <b>두 번째 공을 맞히기 전 쿠션 3번 이상</b>이면 1점. ${cfg.mode !== 'solo' ? '실패하면 차례가 넘어가요.' : ''}`;
@@ -1219,7 +1437,7 @@ $('start').addEventListener('click', () => {
   leaveOnline(); $('menu').hidden = true; newGame(); applyLayout(); if (!tutSeen()) tutOpen();
 });
 $('btnMenu').addEventListener('click', () => { if (net) return openLobby(); $('menu').hidden = false; });
-$('btnRack').addEventListener('click', () => { if (net || phase === 'moving' || phase === 'stroke') return; rack(); autoAim(); });
+$('btnRack').addEventListener('click', () => { if (net || phase === 'moving' || phase === 'stroke') return; if (POOL) return newGame(); rack(); autoAim(); });
 $('again').addEventListener('click', () => {
   if (net) { netSend({ type: 'rematch' }); $('again').disabled = true; $('again').textContent = '상대를 기다리는 중…'; return; }
   $('over').hidden = true; newGame();
@@ -1246,6 +1464,7 @@ function inviteLink(code) { return `${location.origin}${location.pathname}?room=
 
 function paintMenu() {
   const on = cfg.mode === 'online';
+  $('segTarget').closest('.ctl').hidden = cfg.game === '8';
   $('onlineBox').hidden = !on;
   $('start').textContent = on ? '방 만들기' : '시작';
   const saved = load(ROOM_KEY);
@@ -1355,7 +1574,8 @@ function onNetMessage(m) {
     return;
   }
   if (m.type === 'aim') {
-    if (phase !== 'aim' || canAct()) return;
+    if ((phase !== 'aim' && phase !== 'place') || myTurnOnline()) return;
+    if (POOL && m.cx != null) { const c = cueBall(); c.x = m.cx; c.y = m.cy; c.in = false; }
     aim.ang = m.ang; aim.power = m.power; aim.hx = m.hx; aim.hy = m.hy; aim.pulling = m.pulling;
     guideDirty = true; syncUI(); return;
   }
@@ -1379,11 +1599,11 @@ function onState(s) {
   if (s.round !== n.round) {
     // 새 판
     n.round = s.round; n.applied = -1; n.myShot = 0; n.replaying = 0; n.waitingState = null;
-    cfg.game = s.game; cfg.target = s.target;
+    cfg.game = s.game; cfg.target = s.target; setGeometry();
     $('lobby').hidden = true; $('over').hidden = true;
-    $('metaLine').textContent = `${cfg.game === '4' ? '4구' : '3구 (쓰리쿠션)'} · 온라인 ${n.code} · 목표 ${cfg.target}점`;
+    $('metaLine').textContent = `${gameLabel(cfg.game)} · 온라인 ${n.code}${POOL ? '' : ` · 목표 ${cfg.target}점`}`;
     const mk = (seat, ballId, oppId) => ({ name: (s.seats[seat] && s.seats[seat].name) || '빈자리', ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0 });
-    players = [mk(0, 'W', 'Y'), mk(1, 'Y', 'W')];
+    players = POOL ? [mk(0, 'C'), mk(1, 'C')] : [mk(0, 'W', 'Y'), mk(1, 'Y', 'W')];
     applyLayout();
     if (!tutSeen()) tutOpen();
   }
@@ -1400,8 +1620,9 @@ function onState(s) {
 /** 서버 상태로 공·점수·차례를 맞춘다. */
 function syncFromState(s, changed) {
   const n = net;
-  const prevCur = cur, wasAim = phase === 'aim';
-  if (s.balls) balls = s.balls.map(b => mkBall(b.id, b.kind, b.x, b.y)); else if (changed) rack();
+  const prevCur = cur, wasAim = phase === 'aim' || phase === 'place';
+  if (s.balls) balls = s.balls.map(b => { const m = mkBall(b.id, b.kind, b.x, b.y, b.n); m.in = !!b.in; return m; }); else if (changed) rack();
+  if (POOL) pool = s.extra ? { groups: s.extra.groups.slice(), bih: s.extra.bih, broke: s.extra.broke, kitchen: s.extra.kitchen } : { groups: [null, null], bih: true, broke: false, kitchen: true };
   s.stats.forEach((st, i) => Object.assign(players[i], st));
   cur = s.cur; n.replaying = 0; guideDirty = true;
   const fresh = changed && s.seq > 0 && s.seq > n.applied;
@@ -1411,7 +1632,7 @@ function syncFromState(s, changed) {
   }
   n.applied = s.seq; n.waitingState = null;
   if (s.phase === 'finished') { phase = 'over'; renderScore(); onlineOver(); netStatus(); return; }
-  phase = 'aim'; renderScore();
+  phase = POOL && pool.bih && s.cur === n.seat && !s.pending ? 'place' : 'aim'; renderScore();
   if (changed || prevCur !== cur || !wasAim) autoAim(); else syncUI();
   netStatus();
   // 내 샷이 결과 없이 남아 있으면(쳤는데 새로고침 등) 바로 계산해서 보낸다
@@ -1424,6 +1645,7 @@ function syncFromState(s, changed) {
 function startReplay(shot) {
   const n = net; if (!n || !players.length) return;
   n.replaying = shot.seq; cur = shot.by;
+  if (POOL && shot.cx != null) { const c = cueBall(); c.x = shot.cx; c.y = shot.cy; c.in = false; }
   aim.ang = shot.ang; aim.power = shot.power; aim.hx = shot.hx; aim.hy = shot.hy; aim.pulling = false;
   hideLoupe(0); guideDirty = true;
   phase = 'stroke'; syncUI(); renderScore();
@@ -1445,25 +1667,28 @@ function fastForward(shot) {
   n.myShot = shot.seq; cur = shot.by;
   aim.ang = shot.ang; aim.power = shot.power; aim.hx = shot.hx; aim.hy = shot.hy;
   const c = cueBall();
+  if (POOL && shot.cx != null) { c.x = shot.cx; c.y = shot.cy; c.in = false; }
   strike(c, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
-  shotLog = { cue: c.id, hits: [], cush: 0 };
+  shotLog = { cue: c.id, hits: [], cush: 0, potted: [] };
   for (let i = 0; i < 600 * 60 && !balls.every(isStopped); i++) { const ev = []; step(balls, DT, ev); logEvents(ev); }
   evaluate();
 }
 
-function sendResult(msg, sub, tone) {
+function sendResult(msg, sub, tone, poolInfo) {
   const n = net;
-  netSend({ type: 'result', seq: n.myShot, balls: balls.map(b => ({ id: b.id, kind: b.kind, x: b.x, y: b.y })),
-            stats: players.map(p => ({ score: p.score, run: p.run, high: p.high, shots: p.shots })), toast: { msg, sub, tone } });
+  netSend({ type: 'result', seq: n.myShot, balls: balls.map(b => ({ id: b.id, kind: b.kind, n: b.n, in: b.in, x: b.x, y: b.y })),
+            stats: players.map(p => ({ score: p.score, run: p.run, high: p.high, shots: p.shots })), toast: { msg, sub, tone },
+            ...(poolInfo ? { cur: poolInfo.cur, winner: poolInfo.winner, extra: { groups: pool.groups, bih: pool.bih, broke: pool.broke, kitchen: pool.kitchen } } : {}) });
   n.applied = n.myShot;
 }
 
 /** 매 프레임: 내 조준을 상대에게 보내고, 상대 결과가 늦으면 맞춘다. */
 function netTick(now) {
   const n = net;
-  if (canAct() && now - n.aimAt > 80) {
-    const key = [aim.ang.toFixed(4), aim.power, aim.hx, aim.hy, aim.pulling].join();
-    if (key !== n.lastAim) { n.lastAim = key; n.aimAt = now; netSend({ type: 'aim', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, pulling: aim.pulling }); }
+  if ((canAct() || canPlace()) && now - n.aimAt > 80) {
+    const c = cueBall();
+    const key = [aim.ang.toFixed(4), aim.power, aim.hx, aim.hy, aim.pulling, POOL ? c.x.toFixed(1) + ',' + c.y.toFixed(1) : ''].join();
+    if (key !== n.lastAim) { n.lastAim = key; n.aimAt = now; netSend({ type: 'aim', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, pulling: aim.pulling, ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
   }
   // 결과가 왔는데 재생이 너무 오래 걸리면(창이 가려졌던 경우 등) 바로 맞춘다
   if (n.waitingState && n.replaying && (document.hidden || now - n.replayAt > 15000)) { const s = n.waitingState; n.replaying = 0; syncFromState(s, true); }
@@ -1488,7 +1713,7 @@ function openLobby(status) {
   const n = net; if (!n) return;
   $('lobbyCode').textContent = n.code;
   const s = n.state;
-  $('lobbyGame').textContent = s ? `${s.game === '4' ? '4구' : '3구'} · 목표 ${s.target}점` : '';
+  $('lobbyGame').textContent = s ? (s.game === '8' ? '포켓볼 (8볼)' : `${s.game === '4' ? '4구' : '3구'} · 목표 ${s.target}점`) : '';
   $('lobbyLink').value = inviteLink(n.code);
   const playing = s && s.phase !== 'waiting';
   $('lobbyTitle').innerHTML = status ? esc(status) : playing ? `방 <span>${n.code}</span>` : '상대를 <span>기다리는 중</span>';
@@ -1510,7 +1735,7 @@ function onlineOver() {
   const n = net, s = n.state;
   const winner = s && s.winner != null ? s.winner : cur;
   $('overTitle').innerHTML = winner === n.seat ? '내가 <span>이겼어요</span>' : `${esc(players[winner].name)} <span>승리</span>`;
-  $('overText').innerHTML = players.map((q, i) => `${esc(q.name)}${i === n.seat ? ' (나)' : ''} <b>${q.score}점</b> (샷 ${q.shots}, 하이런 ${q.high})`).join('<br>');
+  $('overText').innerHTML = (POOL && s && s.lastToast ? esc(s.lastToast.sub) + '<br>' : '') + players.map((q, i) => `${esc(q.name)}${i === n.seat ? ' (나)' : ''} <b>${q.score}${POOL ? '개' : '점'}</b>${POOL && pool.groups[i] ? ' ' + GROUP_NAME[pool.groups[i]] : ''} (샷 ${q.shots}${POOL ? '' : `, 하이런 ${q.high}`})`).join('<br>');
   const mine = s && s.rematch[n.seat], theirs = s && s.rematch[1 - n.seat];
   $('again').disabled = !!mine;
   $('again').textContent = mine ? '상대를 기다리는 중…' : theirs ? '다시 하기 (상대가 원해요)' : '다시 하기';
