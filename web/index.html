@@ -369,7 +369,7 @@ body.m .loupe{--lz:128px}
     </div>
     <div class="rules" id="rules"></div>
     <button class="shoot" id="start" type="button">시작</button>
-    <div class="menu-foot"><a href="privacy.html" target="_blank" rel="noopener" id="privacyLink">개인정보처리방침</a></div>
+    <div class="menu-foot"><a href="terms.html" target="_blank" rel="noopener" id="termsLink">이용약관</a> · <a href="privacy.html" target="_blank" rel="noopener" id="privacyLink">개인정보처리방침</a></div>
   </div>
 </div>
 
@@ -1859,7 +1859,7 @@ function bootApp() {
   NATIVE.App.addListener('appUrlOpen', ev => openInvite(ev.url));
   NATIVE.App.getLaunchUrl().then(r => { if (r && r.url) openInvite(r.url); }).catch(() => {});
   NATIVE.App.addListener('backButton', onBack);
-  $('privacyLink').addEventListener('click', e => { e.preventDefault(); NATIVE.Browser.open({ url: (CONFIG.SITE || '') + 'privacy.html' }).catch(() => {}); });
+  for (const [id, page] of [['privacyLink', 'privacy.html'], ['termsLink', 'terms.html']]) $(id).addEventListener('click', e => { e.preventDefault(); NATIVE.Browser.open({ url: (CONFIG.SITE || '') + page }).catch(() => {}); });
   $('copyLink').textContent = '공유';
   startAppAds();
 }
