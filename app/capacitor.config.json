@@ -1,0 +1,21 @@
+{
+  "appId": "com.ohsang.play.danggu",
+  "appName": "오늘도 당구",
+  "webDir": "www",
+  "backgroundColor": "#12161b",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#12161b",
+    "scrollEnabled": false,
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "backgroundColor": "#12161b"
+  },
+  "plugins": {
+    "AdMob": {},
+    "StatusBar": {
+      "overlaysWebView": true
+    }
+  }
+}

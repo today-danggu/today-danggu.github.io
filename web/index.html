@@ -10,6 +10,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://danggu.ohsangplay.com/">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 html,body{margin:0}
@@ -180,6 +181,8 @@ body.m .modal.pop{justify-items:end;padding-right:calc(136px + env(safe-area-ins
 body.m .modal.pop .sheet{padding:14px;gap:10px;width:min(300px,100%);max-height:100%;overflow:auto}
 body.m #tipPadBig{width:min(180px,48vh);height:min(180px,48vh)}
 .placebtn{position:absolute;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);border:0;border-radius:999px;padding:10px 22px;background:var(--brass);color:var(--brass-ink);font-family:var(--f-display);font-size:18px;letter-spacing:.04em;cursor:pointer;box-shadow:0 8px 20px rgba(0,0,0,.4);z-index:4}
+.menu-foot{text-align:center;font-size:12px}
+.menu-foot a{color:var(--muted)}
 .pop-hint{font-size:11px;color:var(--muted);text-align:center}
 #thickBig{width:100%;aspect-ratio:560/320;height:auto;background:var(--bg);border:1px solid var(--line);border-radius:10px;touch-action:none;cursor:ew-resize}
 .fine-3{grid-template-columns:repeat(3,1fr)}
@@ -366,6 +369,15 @@ body.m .loupe{--lz:128px}
     </div>
     <div class="rules" id="rules"></div>
     <button class="shoot" id="start" type="button">시작</button>
+    <div class="menu-foot"><a href="privacy.html" target="_blank" rel="noopener" id="privacyLink">개인정보처리방침</a></div>
+  </div>
+</div>
+
+<div class="modal" id="att" hidden>
+  <div class="sheet">
+    <h2>광고 안내</h2>
+    <div class="result">오늘도 당구는 무료로 운영하기 위해 경기가 끝날 때 가끔 광고를 보여 줘요. 다음 화면에서 허용하면 관심 있을 만한 광고가 나오고, 허용하지 않아도 게임은 똑같이 할 수 있어요.</div>
+    <button class="shoot" id="attOk" type="button">계속</button>
   </div>
 </div>
 
@@ -749,6 +761,7 @@ function shoot() {
 }
 
 function release() {
+  appHaptic('shot');
   const c = cueBall();
   strike(c, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
   shotLog = { cue: c.id, hits: [], cush: 0, potted: [] };
@@ -889,11 +902,12 @@ function gameOver(kind, msg, sub) {
     $('overTitle').innerHTML = `${esc(p.name)} <span>승리</span>`;
     $('overText').innerHTML = players.map(q => `${esc(q.name)} <b>${q.score}점</b> (샷 ${q.shots}, 하이런 ${q.high})`).join('<br>');
   }
-  $('over').hidden = false; syncUI();
+  $('over').hidden = false; syncUI(); appGameOverAd('local');
 }
 
 let toastTimer;
 function toast(msg, sub, tone) {
+  if (tone === 'good') appHaptic('good');
   const t = $('toast'); t.className = 'toast show ' + (tone || '');
   t.querySelector('b').textContent = msg; t.querySelector('span').textContent = sub || '';
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
@@ -1460,7 +1474,7 @@ function apiBase() {
 const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function store(key, val) { try { val == null ? localStorage.removeItem(key) : localStorage.setItem(key, JSON.stringify(val)); } catch (e) {} }
 function load(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } }
-function inviteLink(code) { return `${location.origin}${location.pathname}?room=${code}`; }
+function inviteLink(code) { return `${CONFIG.SITE || location.origin + location.pathname}?room=${code}`; }
 
 function paintMenu() {
   const on = cfg.mode === 'online';
@@ -1725,6 +1739,7 @@ function openLobby(status) {
 $('lobbyClose').addEventListener('click', () => { $('lobby').hidden = true; });
 $('lobbyLeave').addEventListener('click', () => { leaveOnline(true); phase = 'menu'; cfg.mode = 'online'; segRepaint(); $('menu').hidden = false; });
 $('copyLink').addEventListener('click', () => {
+  if (NATIVE) { NATIVE.Share.share({ title: '오늘도 당구', text: `같이 당구 쳐요! 방 코드 ${net ? net.code : ''}`, url: $('lobbyLink').value }).catch(() => {}); return; }
   const v = $('lobbyLink').value;
   const done = () => { $('copyLink').textContent = '복사됨'; setTimeout(() => $('copyLink').textContent = '복사', 1500); };
   const fallback = () => { $('lobbyLink').select(); try { document.execCommand('copy'); done(); } catch (e) {} };
@@ -1740,7 +1755,7 @@ function onlineOver() {
   $('again').disabled = !!mine;
   $('again').textContent = mine ? '상대를 기다리는 중…' : theirs ? '다시 하기 (상대가 원해요)' : '다시 하기';
   $('overMenu').textContent = '방 나가기';
-  $('over').hidden = false; syncUI();
+  $('over').hidden = false; syncUI(); appGameOverAd(`${net.code}-${net.round}`);
 }
 
 function bootOnline() {
@@ -1755,6 +1770,98 @@ function bootOnline() {
     $('nick').focus();
   }
   paintMenu();
+}
+
+
+/* ---------- 앱(스토어 버전)에서만: 광고·진동·공유·초대 링크·뒤로가기 ----------
+ * window.DangguNative는 앱 빌드(app/)에서만 들어온다. 웹 사이트에서는 아무것도 하지 않는다.
+ */
+const NATIVE = window.DangguNative && window.DangguNative.isNative ? window.DangguNative : null;
+const AD_GAP_MS = 3 * 60 * 1000; // 전면 광고는 경기가 끝날 때, 3분에 한 번까지
+let adState = { ready: false, loaded: false, lastAt: Date.now() - 2 * 60 * 1000, lastKey: '' };
+
+function appHaptic(kind) {
+  if (!NATIVE) return;
+  try {
+    if (kind === 'shot') NATIVE.Haptics.impact({ style: NATIVE.ImpactStyle.Light });
+    else NATIVE.Haptics.notification({ type: NATIVE.NotificationType.Success });
+  } catch (e) {}
+}
+
+async function askTracking() {
+  if (NATIVE.platform !== 'ios') return;
+  let status = 'notDetermined';
+  try { ({ status } = await NATIVE.AdMob.trackingAuthorizationStatus()); } catch (e) { return; }
+  if (status !== 'notDetermined') return;
+  $('att').hidden = false;
+  await new Promise(res => $('attOk').addEventListener('click', res, { once: true }));
+  $('att').hidden = true;
+  await NATIVE.AdMob.requestTrackingAuthorization().catch(() => {});
+}
+function loadInterstitial() {
+  if (!adState.ready || adState.loaded || !NATIVE.ads.interstitial) return;
+  NATIVE.AdMob.prepareInterstitial({ adId: NATIVE.ads.interstitial, isTesting: NATIVE.ads.testing })
+    .then(() => { adState.loaded = true; }, () => { setTimeout(loadInterstitial, 60000); });
+}
+async function startAppAds() {
+  const { AdMob } = NATIVE;
+  try {
+    const info = await AdMob.requestConsentInfo();
+    if (info.isConsentFormAvailable && info.status === 'REQUIRED') await AdMob.showConsentForm();
+  } catch (e) {}
+  await askTracking();
+  try { await AdMob.initialize({ initializeForTesting: NATIVE.ads.testing }); } catch (e) { return; }
+  adState.ready = true; loadInterstitial();
+}
+/** 경기가 끝나 결과 창이 뜰 때. 같은 경기에서 두 번 띄우지 않는다. */
+function appGameOverAd(key) {
+  if (!NATIVE || !adState.ready || !adState.loaded) return;
+  if (key === adState.lastKey || Date.now() - adState.lastAt < AD_GAP_MS) return;
+  adState.lastKey = key; adState.lastAt = Date.now(); adState.loaded = false;
+  setTimeout(() => {
+    NATIVE.AdMob.showInterstitial().catch(() => {}).finally(() => setTimeout(loadInterstitial, 1000));
+  }, 1200); // 결과를 잠깐 본 뒤
+}
+
+/** 초대 링크(https://danggu.ohsangplay.com/?room=코드, danggu://join?room=코드)로 앱이 열렸을 때 */
+function openInvite(url) {
+  let code = '';
+  try {
+    const u = new URL(url);
+    code = (u.searchParams.get('room') || u.pathname.replace(/\//g, '') || '').toUpperCase();
+  } catch (e) { return; }
+  if (!/^[A-Z0-9]{4}$/.test(code)) return;
+  if (net && net.code === code) return;
+  $('over').hidden = true; $('tut').hidden = true;
+  cfg.mode = 'online'; segRepaint();
+  $('joinCode').value = code;
+  const nick = load(NICK_KEY), saved = load(ROOM_KEY);
+  if (nick) return connectOnline(code, saved && saved.code === code ? saved.playerId : null, nick);
+  leaveOnline(); phase = 'menu'; $('menu').hidden = false; $('nick').focus();
+  onlineError('닉네임을 넣고 코드로 입장을 눌러 주세요');
+}
+
+/** 안드로이드 뒤로가기: 열린 창부터 닫고, 게임 중이면 메뉴, 메뉴에서는 앱을 내린다 */
+function onBack() {
+  for (const id of ['spinPop', 'thickPop', 'tut', 'rotateNote']) if (!$(id).hidden) { $(id).hidden = true; hideLoupe(0); return; }
+  if (!$('lobby').hidden && !$('lobbyClose').hidden) { $('lobby').hidden = true; return; }
+  if ($('menu').hidden && $('over').hidden && $('lobby').hidden && $('att').hidden) {
+    if (net) return openLobby();
+    $('menu').hidden = false; return;
+  }
+  NATIVE.App.minimizeApp().catch(() => {});
+}
+
+function bootApp() {
+  if (!NATIVE) return;
+  document.body.classList.add('in-app');
+  try { NATIVE.StatusBar.hide().catch(() => {}); } catch (e) {}
+  NATIVE.App.addListener('appUrlOpen', ev => openInvite(ev.url));
+  NATIVE.App.getLaunchUrl().then(r => { if (r && r.url) openInvite(r.url); }).catch(() => {});
+  NATIVE.App.addListener('backButton', onBack);
+  $('privacyLink').addEventListener('click', e => { e.preventDefault(); NATIVE.Browser.open({ url: (CONFIG.SITE || '') + 'privacy.html' }).catch(() => {}); });
+  $('copyLink').textContent = '공유';
+  startAppAds();
 }
 
 /* 루프 */
@@ -1781,6 +1888,7 @@ newGame(); phase = 'menu';
 addEventListener('resize', () => { applyLayout(); });
 applyLayout(); syncUI(); requestAnimationFrame(loop);
 bootOnline();
+bootApp();
 </script>
 
 </body>

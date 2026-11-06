@@ -22,7 +22,28 @@ worker/              온라인 같이하기 서버 (Cloudflare Worker + Durable 
   server.yml         worker/ 변경이 푸시되면 타입 검사·테스트 후 서버 배포
 ```
 
-앞으로 붙일 것: `app/` (Capacitor 앱).
+app/                 스토어 앱 (Capacitor 8). web/을 앱 안에 묶는다
+  scripts/build-web.mjs  web/ → app/www/ 복사, 앱용 설정·네이티브 묶음(cap.js) 넣기
+  src/native.js      AdMob·진동·공유·상태바·앱 링크를 window.DangguNative로
+  assets/            아이콘·스플래시 원본 (npx @capacitor/assets generate)
+  android/ ios/      네이티브 프로젝트 (가로 고정)
+
+## 앱 (오늘도 당구)
+
+- 패키지명 / 번들 ID: `com.ohsang.play.danggu`, 가로 화면 고정, 상태 표시줄 숨김
+- 광고: 경기가 끝날 때 전면 광고(AdMob), 3분에 한 번까지. 게임 중에는 광고 없음
+  - 처음 실행: 유럽 등은 동의 화면 → iPhone은 안내 후 추적 허용 요청 → 광고 시작
+  - 광고 ID는 저장소 Variables로: `ADMOB_IOS_APP_ID`, `ADMOB_IOS_INTERSTITIAL_ID`, `ADMOB_ANDROID_APP_ID`, `ADMOB_ANDROID_INTERSTITIAL_ID` (없으면 구글 테스트 광고)
+- 초대 링크 `https://danggu.ohsangplay.com/?room=코드`가 앱으로 바로 열림 (앱이 없으면 웹)
+  - iOS: Secrets `APPLE_TEAM_ID`가 있으면 Pages 배포 때 `.well-known/apple-app-site-association`을 만든다
+  - 안드로이드: Variables `ANDROID_CERT_SHA256`(업로드 키, Play 앱 서명 키를 쉼표로)이 있으면 `assetlinks.json`
+- 공유 버튼(시스템 공유 창), 샷·득점 진동, 안드로이드 뒤로가기(창 닫기 → 메뉴 → 앱 내리기)
+
+### 빌드
+
+- 안드로이드: Actions → **안드로이드 빌드** → Run workflow. 업로드 키 Secrets(`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`)가 있으면 서명된 AAB, 없으면 디버그 APK
+- iOS: Actions → **iOS 빌드 → TestFlight 업로드** → Run workflow. Secrets `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8_BASE64` 필요 (야추와 같은 값)
+- 로컬: `cd app && npm install && npm run build` (web 묶기 + `cap sync`)
 
 ## 온라인 같이하기
 
