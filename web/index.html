@@ -1861,6 +1861,8 @@ function bootApp() {
   NATIVE.App.addListener('backButton', onBack);
   for (const [id, page] of [['privacyLink', 'privacy.html'], ['termsLink', 'terms.html']]) $(id).addEventListener('click', e => { e.preventDefault(); NATIVE.Browser.open({ url: (CONFIG.SITE || '') + page }).catch(() => {}); });
   $('copyLink').textContent = '공유';
+  // 앱은 늘 휴대폰 가로 화면이라 화면 고르기를 숨긴다
+  cfg.layout = 'auto'; $('segLayout').closest('.ctl').hidden = true; applyLayout();
   startAppAds();
 }
 
