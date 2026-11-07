@@ -1304,7 +1304,7 @@ for (const tvEl of [$('thickView'), $('mThick'), $('thickBig')]) {
     if (!tdrag) return;
     const d = tdrag; tdrag = null;
     // 휴대폰 두께 그림을 톡 누르면 크게 열어서 세밀하게
-    if (d.el.id === 'mThick' && !d.moved) { $('thickPop').hidden = false; showLoupe(); return; }
+    if (d.el.id === 'mThick' && !d.moved) { $('thickPop').hidden = false; drawThick(); showLoupe(); return; }
     if (d.el.id !== 'thickBig') hideLoupe(700);
   };
   tvEl.addEventListener('pointerup', end); tvEl.addEventListener('pointercancel', end);
