@@ -30,7 +30,7 @@ jobs:
       - name: 사이트 파일 준비
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+          ANDROID_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 || secrets.ANDROID_CERT_SHA256 }}
         run: |
           mkdir -p _site && cp -r web/. _site/ && mkdir -p _site/.well-known
           if printf '%s' "$APPLE_TEAM_ID" | grep -Eq '^[A-Z0-9]{10}$'; then
