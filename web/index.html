@@ -656,7 +656,9 @@ function validTargets() {
   return cfg.game === '4' ? balls.filter(b => b.kind === 'red').map(b => b.id) : objectIds();
 }
 
+/** 새 차례의 기본 조준: 가까운 공 정면, 당점은 늘 중앙 (이전 샷의 당점을 이어 쓰지 않는다) */
 function autoAim() {
+  aim.hx = 0; aim.hy = 0;
   const c = cueBall(); let best = null, bd = 1e9;
   for (const id of validTargets()) { const o = ball(id); const d = Math.hypot(o.x - c.x, o.y - c.y); if (d < bd) { bd = d; best = id; } }
   aim.target = best; aim.thick = 0; applyThickness();
