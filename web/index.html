@@ -401,7 +401,7 @@ body.m .loupe{--lz:128px}
     <div class="codebox"><span class="lbl">방 코드</span><b id="lobbyCode">----</b><span class="meta" id="lobbyGame"></span></div>
     <div class="ctl">
       <span class="lbl">초대 링크</span>
-      <div class="join-row"><input class="field" id="lobbyLink" readonly aria-label="초대 링크"><button class="btn" id="copyLink" type="button">복사</button></div>
+      <div class="join-row"><input class="field" id="lobbyLink" readonly aria-label="초대 링크"><button class="btn" id="copyLink" type="button">복사</button><button class="btn" id="shareLink" type="button" hidden>공유</button></div>
     </div>
     <div class="result" id="lobbyText">친구에게 링크나 방 코드를 보내 주세요. 친구가 들어오면 바로 시작해요.</div>
     <div class="row">
@@ -1771,7 +1771,6 @@ function openLobby(status) {
 $('lobbyClose').addEventListener('click', () => { $('lobby').hidden = true; });
 $('lobbyLeave').addEventListener('click', () => { leaveOnline(true); phase = 'menu'; cfg.mode = 'online'; segRepaint(); $('menu').hidden = false; });
 $('copyLink').addEventListener('click', () => {
-  if (NATIVE) { NATIVE.Share.share({ title: '오늘도 당구', text: `같이 당구 쳐요! 방 코드 ${net ? net.code : ''}`, url: $('lobbyLink').value }).catch(() => {}); return; }
   const v = $('lobbyLink').value;
   const done = () => { $('copyLink').textContent = '복사됨'; setTimeout(() => $('copyLink').textContent = '복사', 1500); };
   const fallback = () => { $('lobbyLink').select(); try { document.execCommand('copy'); done(); } catch (e) {} };
@@ -1893,7 +1892,12 @@ function bootApp() {
   NATIVE.App.getLaunchUrl().then(r => { if (r && r.url) openInvite(r.url); }).catch(() => {});
   NATIVE.App.addListener('backButton', onBack);
   for (const [id, page] of [['privacyLink', 'privacy.html'], ['termsLink', 'terms.html']]) $(id).addEventListener('click', e => { e.preventDefault(); NATIVE.Browser.open({ url: (CONFIG.SITE || '') + page }).catch(() => {}); });
-  $('copyLink').textContent = '공유';
+  // 공유 창의 '복사'는 글자만 복사하는 앱이 있어서 링크를 글 안에 넣는다. 복사 버튼은 링크만 복사한다.
+  $('shareLink').hidden = false;
+  $('shareLink').addEventListener('click', () => {
+    const link = $('lobbyLink').value;
+    NATIVE.Share.share({ title: '오늘도 당구', text: `같이 당구 쳐요! 방 코드 ${net ? net.code : ''}\n${link}`, dialogTitle: '친구 초대' }).catch(() => {});
+  });
   // 앱은 늘 휴대폰 가로 화면이라 화면 고르기를 숨긴다
   cfg.layout = 'auto'; $('segLayout').closest('.ctl').hidden = true; applyLayout();
   startAppAds();
