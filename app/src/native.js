@@ -1,7 +1,7 @@
 // 앱에서만 쓰는 네이티브 기능을 게임 화면(web/index.html)이 쓸 수 있게 window.DangguNative로 내놓는다.
 // build-web.mjs가 esbuild로 묶어서 www/js/cap.js로 넣는다. 웹 사이트에는 들어가지 않는다.
 import { Capacitor } from '@capacitor/core';
-import { AdMob } from '@capacitor-community/admob';
+import { AdMob, BannerAdPosition, BannerAdSize, BannerAdPluginEvents, RewardAdPluginEvents } from '@capacitor-community/admob';
 import { Share } from '@capacitor/share';
 import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics';
 import { Browser } from '@capacitor/browser';
@@ -13,9 +13,13 @@ const platform = Capacitor.getPlatform();
 window.DangguNative = {
   isNative: Capacitor.isNativePlatform(),
   platform,
-  /** 이 플랫폼의 광고 단위 { interstitial, testing } */
+  /** 이 플랫폼의 광고 단위 { interstitial, banner, rewarded, testing }. 빈 값이면 그 광고는 쓰지 않는다 */
   ads: { ...(__ADS__[platform] ?? {}), testing: !!__ADS__.testing[platform] },
   AdMob,
+  BannerAdPosition,
+  BannerAdSize,
+  BannerAdPluginEvents,
+  RewardAdPluginEvents,
   Share,
   Haptics,
   ImpactStyle,

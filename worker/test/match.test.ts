@@ -4,6 +4,7 @@ import {
   applyResult,
   cleanName,
   createRoom,
+  grantItemAd,
   isRoomCode,
   join,
   leave,
@@ -185,5 +186,59 @@ describe('포켓볼', () => {
   it('흰 공 위치가 당구대 밖이면 막는다', () => {
     const s = poolRoom();
     expect(() => shoot(s, 0, { ...shot, cx: -50, cy: 10 }, T)).toThrow(RoomError);
+  });
+});
+
+describe('안내선+ 아이템', () => {
+  function appRoom(aApp = true, bApp = true) {
+    const s = createRoom('ABCD', '4', 10, T);
+    join(s, null, '상원', 'id-a', T, aApp);
+    join(s, null, '친구', 'id-b', T, bApp);
+    return s;
+  }
+  const miss = (s: RoomState, seat: number) => {
+    const p = s.pending!;
+    applyResult(s, seat, { seq: p.seq, balls: balls4, stats: s.stats.map((x) => stat(x.score, x.shots)), toast: {} }, T);
+  };
+  it('둘 다 앱이면 자리마다 3번, 광고를 보면 한 번 더', () => {
+    const s = appRoom();
+    expect(viewFor(s, 0, [true, true]).itemsOn).toBe(true);
+    for (let i = 0; i < 3; i++) {
+      expect(shoot(s, 0, { ...shot, plus: true }, T).plus).toBe(true);
+      miss(s, 0);
+      shoot(s, 1, shot, T);
+      miss(s, 1);
+    }
+    expect(s.items![0].used).toBe(3);
+    expect(() => shoot(s, 0, { ...shot, plus: true }, T)).toThrow(RoomError);
+    grantItemAd(s, 0, T);
+    expect(() => grantItemAd(s, 0, T)).toThrow(RoomError);
+    expect(shoot(s, 0, { ...shot, plus: true }, T).plus).toBe(true);
+    expect(s.items![1]).toEqual({ used: 0, bonus: false });
+  });
+  it('한 사람이라도 웹이면 쓸 수 없다', () => {
+    const s = appRoom(true, false);
+    expect(viewFor(s, 0, [true, true]).itemsOn).toBe(false);
+    expect(() => shoot(s, 0, { ...shot, plus: true }, T)).toThrow(RoomError);
+    expect(() => grantItemAd(s, 0, T)).toThrow(RoomError);
+  });
+  it('다시 들어오면 앱 여부를 새로 적고, 새 판이면 아이템이 처음으로', () => {
+    const s = appRoom(true, false);
+    join(s, 'id-b', '친구', 'x', T, true);
+    expect(viewFor(s, 0, [true, true]).itemsOn).toBe(true);
+    shoot(s, 0, { ...shot, plus: true }, T);
+    s.stats[0].score = 9;
+    applyResult(s, 0, { seq: 1, balls: balls4, stats: [stat(10, 1), stat()], toast: {} }, T);
+    expect(s.phase).toBe('finished');
+    requestRematch(s, 0, T);
+    requestRematch(s, 1, T);
+    expect(s.items).toEqual([{ used: 0, bonus: false }, { used: 0, bonus: false }]);
+  });
+  it('예전 방(아이템 정보 없음)도 동작한다', () => {
+    const s = appRoom();
+    delete s.items;
+    expect(viewFor(s, 0, [true, true]).items[0].used).toBe(0);
+    shoot(s, 0, { ...shot, plus: true }, T);
+    expect(s.items![0].used).toBe(1);
   });
 });

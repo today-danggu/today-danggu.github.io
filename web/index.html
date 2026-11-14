@@ -186,6 +186,22 @@ body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-item
 .wheel{flex:1;width:54px;min-height:56px;border-radius:12px;border:1px solid var(--line);background:repeating-linear-gradient(180deg,#323d4a 0 2px,#1a2028 2px 10px);touch-action:none;cursor:ns-resize;box-shadow:inset 0 14px 12px -8px #000,inset 0 -14px 12px -8px #000}
 .mguide{border:1px solid var(--line);background:var(--panel-2);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer;flex:none}
 .mguide[aria-pressed="true"]{border-color:var(--brass);color:var(--brass)}
+/* 안내선+ 아이템 (앱에서만) */
+.mguides{display:flex;gap:4px;flex:none;width:100%;justify-content:center}
+.plus{border:1px solid #6b5a33;background:#2a2518;color:var(--brass);border-radius:8px;padding:4px 7px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;line-height:1.2;display:inline-flex;align-items:center;gap:4px}
+.plus b{font-family:var(--f-mono);font-weight:600}
+.plus[aria-pressed="true"]{background:var(--brass);color:var(--brass-ink);border-color:var(--brass);box-shadow:0 0 0 2px rgba(212,166,75,.35)}
+.plus.ad{border-style:dashed;color:var(--fg);background:var(--panel-2)}
+.plus.ad i{font-style:normal;font-size:9px;font-weight:700;letter-spacing:.06em;background:var(--brass);color:var(--brass-ink);border-radius:4px;padding:1px 4px}
+.plus:disabled{opacity:.4;cursor:default}
+.plus-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.plus-row .plus{font-size:13px;padding:6px 12px}
+.plus-help{font-size:12px;color:var(--muted)}
+.pitem{display:inline-block;font-family:var(--f-mono);font-size:11px;font-weight:600;color:var(--brass);border:1px solid #6b5a33;border-radius:5px;padding:0 4px;margin-left:4px;line-height:1.4;vertical-align:1px}
+.pitem.out{color:var(--muted);border-color:var(--line)}
+body.m .pitem{font-size:10px;padding:0 3px}
+/* 앱 배너 광고(메뉴·결과·대기실에서만): 화면 아래에 붙으니 창 아래를 비운다 */
+body.banner .modal:not(.pop){padding-bottom:calc(var(--banner-h,50px) + 12px + env(safe-area-inset-bottom,0px))!important}
 .spin-sheet{width:min(320px,100%);gap:12px}
 /* 당점·두께 팝업: 당구대가 보이게 옅은 배경, 오른쪽에 붙여서. 바깥을 누르면 닫힘 */
 .modal.pop{background:rgba(8,10,13,.32)}
@@ -282,6 +298,10 @@ body.m .loupe{--lz:128px}
         <div class="row">
           <label class="toggle"><input type="checkbox" id="guideOn" checked> 안내선 (한 번 튕긴 뒤까지)</label>
         </div>
+        <div class="plus-row" id="plusRow" hidden>
+          <button class="plus" id="plusBtn" type="button" aria-pressed="false"></button>
+          <span class="plus-help" id="plusHelp">이번 샷만 쿠션 한 번 더 보기</span>
+        </div>
         <div class="keys">당구대 빈 곳을 끌면 조준, 큐대를 끌면 힘 · <kbd>←</kbd><kbd>→</kbd> 미세 조준 (<kbd>Shift</kbd> 1°) · <kbd>↑</kbd><kbd>↓</kbd> 힘 · <kbd>Space</kbd> 샷</div>
       </div>
     </div>
@@ -292,7 +312,10 @@ body.m .loupe{--lz:128px}
       <div class="mval" id="mThickVal">—</div>
       <div class="mhint">‹ 밀어서 두께 ›</div>
       <div class="wheel" id="wheel" aria-label="미세 조준 휠"></div>
-      <button class="mguide" id="mGuide" type="button" aria-pressed="true">안내선</button>
+      <div class="mguides">
+        <button class="mguide" id="mGuide" type="button" aria-pressed="true">안내선</button>
+        <button class="plus" id="mPlus" type="button" aria-pressed="false" hidden></button>
+      </div>
     </div>
   </div>
   <aside class="ad-slot ad-bottom" data-ad="bottom" aria-label="광고"><span>광고 728×90</span></aside>
@@ -389,7 +412,7 @@ body.m .loupe{--lz:128px}
 <div class="modal" id="att" hidden>
   <div class="sheet">
     <h2>광고 안내</h2>
-    <div class="result">오늘도 당구는 무료로 운영하기 위해 경기가 끝날 때 가끔 광고를 보여 줘요. 다음 화면에서 허용하면 관심 있을 만한 광고가 나오고, 허용하지 않아도 게임은 똑같이 할 수 있어요.</div>
+    <div class="result">오늘도 당구는 무료로 운영하기 위해 메뉴·결과 화면 아래에 배너를, 몇 판에 한 번 경기가 끝날 때 광고를 보여 줘요. 다음 화면에서 허용하면 관심 있을 만한 광고가 나오고, 허용하지 않아도 게임은 똑같이 할 수 있어요.</div>
     <button class="shoot" id="attOk" type="button">계속</button>
   </div>
 </div>
@@ -545,7 +568,8 @@ function step(balls, dt, ev) {
 function touches(e, id) { return e.t === 'c' || e.t === 'p' ? e.id === id : (e.a === id || e.b === id); }
 
 // 안내선: 실제 물리를 복제해서 돌리고, 수구가 처음 부딪힌 뒤 각 공의 다음 충돌 전까지만 기록
-function simulateGuide(balls, cueId, dx, dy, speed, hx, hy) {
+function simulateGuide(balls, cueId, dx, dy, speed, hx, hy, extra) {
+  extra = extra || 0; // 안내선+: 수구가 몇 번 더 튕기는 것까지 볼지
   const sim = balls.map(b => ({ ...b }));
   const c = sim.find(b => b.id === cueId);
   strike(c, dx, dy, speed, hx, hy);
@@ -557,10 +581,10 @@ function simulateGuide(balls, cueId, dx, dy, speed, hx, hy) {
       if (e) {
         pre.push([c.x, c.y]);
         ghost = { x: c.x, y: c.y, kind: e.t };
-        tracks.push({ b: c, pts: [[c.x, c.y]], len: 0, done: false });
+        tracks.push({ b: c, pts: [[c.x, c.y]], len: 0, done: false, hits: 0, seg: 0, split: 0, max: 1 + extra });
         if (e.t === 'b') {
           const o = sim.find(b => b.id === (e.a === c.id ? e.b : e.a));
-          tracks.push({ b: o, pts: [[o.x, o.y]], len: 0, done: false });
+          tracks.push({ b: o, pts: [[o.x, o.y]], len: 0, done: false, hits: 0, seg: 0, split: 0, max: 1 });
         }
         phase = 1; continue;
       }
@@ -571,13 +595,19 @@ function simulateGuide(balls, cueId, dx, dy, speed, hx, hy) {
         const hit = ev.some(e => touches(e, t.b.id));
         const last = t.pts[t.pts.length - 1];
         const d = Math.hypot(t.b.x - last[0], t.b.y - last[1]);
-        if (d > 3 || hit) { t.len += d; t.pts.push([t.b.x, t.b.y]); }
-        if (hit || t.len > GUIDE_LEN || isStopped(t.b)) t.done = true;
+        if (d > 3 || hit) { t.len += d; t.seg += d; t.pts.push([t.b.x, t.b.y]); }
+        if (hit) { t.hits++; t.seg = 0; }
+        const normalEnd = t.hits >= 1 || t.len > GUIDE_LEN; // 보통 안내선은 여기까지
+        if (t.max > 1) {
+          // 안내선+: 다음 쿠션(또는 공)에서 한 번 더 튕긴 뒤 방향까지
+          if (!t.split && normalEnd) t.split = t.pts.length - 1;
+          if (t.hits >= 2 || (t.hits >= 1 && t.seg > GUIDE_LEN) || t.len > 2400 || isStopped(t.b)) t.done = true;
+        } else if (normalEnd || isStopped(t.b)) t.done = true;
       }
       if (tracks.every(t => t.done)) break;
     }
   }
-  return { pre, ghost, tracks: tracks.map(t => ({ id: t.b.id, kind: t.b.kind, cue: t.b.id === cueId, pts: t.pts })) };
+  return { pre, ghost, plus: extra > 0, tracks: tracks.map(t => ({ id: t.b.id, kind: t.b.kind, cue: t.b.id === cueId, pts: t.pts, split: t.split })) };
 }
 //PHYS-END
 
@@ -636,7 +666,7 @@ function rack() {
 
 function newGame() {
   rack();
-  const mk = (name, ballId, oppId) => ({ name, ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0 });
+  const mk = (name, ballId, oppId) => ({ name, ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0, itemUsed: 0, itemBonus: false });
   if (POOL) players = cfg.mode === 'solo' ? [mk('나', 'C')] : [mk('플레이어 1', 'C'), mk('플레이어 2', 'C')];
   else players = cfg.mode === 'solo' ? [mk('나', 'W', 'Y')] : [mk('플레이어 1', 'W', 'Y'), mk('플레이어 2', 'Y', 'W')];
   cur = 0; phase = POOL ? 'place' : 'aim';
@@ -658,7 +688,7 @@ function validTargets() {
 
 /** 새 차례의 기본 조준: 가까운 공 정면, 당점은 늘 중앙 (이전 샷의 당점을 이어 쓰지 않는다) */
 function autoAim() {
-  aim.hx = 0; aim.hy = 0;
+  aim.hx = 0; aim.hy = 0; plusArmed = false;
   const c = cueBall(); let best = null, bd = 1e9;
   for (const id of validTargets()) { const o = ball(id); const d = Math.hypot(o.x - c.x, o.y - c.y); if (d < bd) { bd = d; best = id; } }
   aim.target = best; aim.thick = 0; applyThickness();
@@ -723,7 +753,7 @@ function syncUI() {
   const tipText = parts.length ? parts.join(' · ') : '중앙';
   $('tipVal').textContent = tipText; $('bigTipVal').textContent = tipText;
   $('mTipVal').textContent = parts.length ? parts.map(t => t.replace('오른쪽', '우').replace('왼쪽', '좌').replace('상단', '상').replace('하단', '하')).join(' ') : '중앙';
-  drawPad(); drawThick();
+  drawPad(); drawThick(); paintItems();
   $('placeBtn').hidden = !canPlace();
 }
 
@@ -735,7 +765,7 @@ function renderScore() {
     const el = document.createElement('div'); el.className = 'pcard' + (on ? ' on' : '');
     const kind = ball(p.ball).kind;
     el.innerHTML = `<span class="pdot" style="background:${COLORS[kind]}"></span>
-      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
+      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''}${itemBadge(i)} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
       <div class="psub">${NAMES[kind]} · 샷 ${p.shots} · 하이런 ${p.high}</div></div>
       <div class="pts">${p.score}<small>/ ${cfg.target}</small></div>`;
     box.appendChild(el);
@@ -756,7 +786,7 @@ function renderPoolScore(box) {
     const of = cfg.mode === 'solo' ? 15 : 7;
     const el = document.createElement('div'); el.className = 'pcard' + (on ? ' on' : '');
     el.innerHTML = `<span class="pdot" style="background:${dot}"></span>
-      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
+      <div><div class="pname">${esc(p.name)}${net && i === net.seat ? ' (나)' : ''}${itemBadge(i)} ${on ? '<span class="turn-tag">차례</span>' : ''} ${p.off ? '<span class="conn-off">연결 끊김</span>' : ''}</div>
       <div class="psub">${cfg.mode === 'solo' ? '15개 모두 넣기' : g ? GROUP_NAME[g] : '오픈 (아직 안 정해짐)'} · 샷 ${p.shots}</div></div>
       <div class="pts">${Math.min(p.score, of)}<small>/ ${of}</small></div>`;
     box.appendChild(el);
@@ -769,7 +799,9 @@ function speed() { return VMAX * aim.power / 100; }
 function shoot() {
   if (!canAct()) return;
   hideLoupe(0);
-  if (net) { const c = cueBall(); net.myShot = net.state.seq + 1; netSend({ type: 'shot', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
+  const plus = plusArmed && itemsAllowed() && itemLeft(cur) > 0;
+  if (plus) players[cur].itemUsed++;
+  if (net) { const c = cueBall(); net.myShot = net.state.seq + 1; netSend({ type: 'shot', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, ...(plus ? { plus: true } : {}), ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
   phase = 'stroke'; syncUI();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   stroke = { t0: performance.now(), dur: reduce ? 0 : 140 };
@@ -1051,7 +1083,14 @@ function drawGuide() {
     ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = px(1.4); ctx.setLineDash([px(3), px(3)]);
     ctx.beginPath(); ctx.arc(ghost.x, ghost.y, R, 0, 7); ctx.stroke(); ctx.setLineDash([]);
   }
-  for (const t of tracks) if (t.cue) arrow(t.pts, 'rgba(255,255,255,.9)', true);
+  for (const t of tracks) {
+    if (!t.cue) continue;
+    // 안내선+: 처음 튕긴 곳까지는 흰색, 그 뒤 한 번 더는 금색
+    if (guide.plus && t.split > 0 && t.split < t.pts.length - 1) {
+      arrow(t.pts.slice(0, t.split + 1), 'rgba(255,255,255,.9)', true);
+      arrow(t.pts.slice(t.split), 'rgba(232,190,96,.95)', true);
+    } else arrow(t.pts, 'rgba(255,255,255,.9)', true);
+  }
 }
 
 function drawStick() {
@@ -1567,6 +1606,7 @@ function openSocket() {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.searchParams.set('name', n.name);
   if (n.playerId) url.searchParams.set('playerId', n.playerId);
+  if (NATIVE) url.searchParams.set('app', '1'); // 둘 다 앱이면 안내선+ 아이템을 쓴다
   const ws = new WebSocket(url); n.ws = ws;
   ws.onopen = () => {
     n.retry = 0; clearInterval(n.ping);
@@ -1623,6 +1663,7 @@ function onNetMessage(m) {
     if ((phase !== 'aim' && phase !== 'place') || myTurnOnline()) return;
     if (POOL && m.cx != null) { const c = cueBall(); c.x = m.cx; c.y = m.cy; c.in = false; }
     aim.ang = m.ang; aim.power = m.power; aim.hx = m.hx; aim.hy = m.hy; aim.pulling = m.pulling;
+    n.remotePlus = !!m.plus;
     guideDirty = true; syncUI(); return;
   }
   if (m.type === 'shot') {
@@ -1648,12 +1689,14 @@ function onState(s) {
     cfg.game = s.game; cfg.target = s.target; setGeometry();
     $('lobby').hidden = true; $('over').hidden = true;
     $('metaLine').textContent = `${gameLabel(cfg.game)} · 온라인 ${n.code}${POOL ? '' : ` · 목표 ${cfg.target}점`}`;
-    const mk = (seat, ballId, oppId) => ({ name: (s.seats[seat] && s.seats[seat].name) || '빈자리', ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0 });
+    const mk = (seat, ballId, oppId) => ({ name: (s.seats[seat] && s.seats[seat].name) || '빈자리', ball: ballId, opp: oppId, score: 0, run: 0, high: 0, shots: 0, itemUsed: 0, itemBonus: false });
     players = POOL ? [mk(0, 'C'), mk(1, 'C')] : [mk(0, 'W', 'Y'), mk(1, 'Y', 'W')];
     applyLayout();
     if (!tutSeen()) tutOpen();
   }
   s.seats.forEach((st, i) => { if (players[i]) { players[i].name = st ? st.name : '나감'; players[i].off = !st || !st.connected; } });
+  if (s.items) s.items.forEach((it, i) => { if (players[i]) { players[i].itemUsed = it.used; players[i].itemBonus = it.bonus; } });
+  paintItems();
   const animating = phase === 'stroke' || phase === 'moving';
   if (animating) {
     // 재생이 끝나면 맞춘다
@@ -1671,6 +1714,7 @@ function syncFromState(s, changed) {
   if (POOL) pool = s.extra ? { groups: s.extra.groups.slice(), bih: s.extra.bih, broke: s.extra.broke, kitchen: s.extra.kitchen } : { groups: [null, null], bih: true, broke: false, kitchen: true };
   s.stats.forEach((st, i) => Object.assign(players[i], st));
   cur = s.cur; n.replaying = 0; guideDirty = true;
+  if (prevCur !== cur || changed) n.remotePlus = false;
   const fresh = changed && s.seq > 0 && s.seq > n.applied;
   if (fresh && s.lastToast && s.lastToast.msg && n.myShot !== s.seq) {
     const t = s.lastToast;
@@ -1733,8 +1777,8 @@ function netTick(now) {
   const n = net;
   if ((canAct() || canPlace()) && now - n.aimAt > 80) {
     const c = cueBall();
-    const key = [aim.ang.toFixed(4), aim.power, aim.hx, aim.hy, aim.pulling, POOL ? c.x.toFixed(1) + ',' + c.y.toFixed(1) : ''].join();
-    if (key !== n.lastAim) { n.lastAim = key; n.aimAt = now; netSend({ type: 'aim', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, pulling: aim.pulling, ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
+    const key = [aim.ang.toFixed(4), aim.power, aim.hx, aim.hy, aim.pulling, plusArmed, POOL ? c.x.toFixed(1) + ',' + c.y.toFixed(1) : ''].join();
+    if (key !== n.lastAim) { n.lastAim = key; n.aimAt = now; netSend({ type: 'aim', ang: aim.ang, power: aim.power, hx: aim.hx, hy: aim.hy, pulling: aim.pulling, ...(plusArmed ? { plus: true } : {}), ...(POOL ? { cx: c.x, cy: c.y } : {}) }); }
   }
   // 결과가 왔는데 재생이 너무 오래 걸리면(창이 가려졌던 경우 등) 바로 맞춘다
   if (n.waitingState && n.replaying && (document.hidden || now - n.replayAt > 15000)) { const s = n.waitingState; n.replaying = 0; syncFromState(s, true); }
@@ -1808,8 +1852,11 @@ function bootOnline() {
  * window.DangguNative는 앱 빌드(app/)에서만 들어온다. 웹 사이트에서는 아무것도 하지 않는다.
  */
 const NATIVE = window.DangguNative && window.DangguNative.isNative ? window.DangguNative : null;
-const AD_GAP_MS = 3 * 60 * 1000; // 전면 광고는 경기가 끝날 때, 3분에 한 번까지
-let adState = { ready: false, loaded: false, lastAt: Date.now() - 2 * 60 * 1000, lastKey: '' };
+/* 전면 광고: 경기가 끝날 때, 5판마다 한 번이고 앞 광고와 30분 넘게 떨어져 있을 때만 (연달아 즐길 수 있게) */
+const AD_EVERY_GAMES = 5, AD_GAP_MS = 30 * 60 * 1000;
+const AD_KEY = 'danggu.ad';
+let adState = { ready: false, loaded: false, lastKey: '', rewardLoaded: false, rewardBusy: false, banner: false, bannerShown: false };
+function adMemo() { const v = load(AD_KEY); return v && typeof v === 'object' ? v : { games: 0, lastAt: 0 }; }
 
 function appHaptic(kind) {
   if (!NATIVE) return;
@@ -1842,16 +1889,134 @@ async function startAppAds() {
   } catch (e) {}
   await askTracking();
   try { await AdMob.initialize({ initializeForTesting: NATIVE.ads.testing }); } catch (e) { return; }
-  adState.ready = true; loadInterstitial();
+  adState.ready = true; loadInterstitial(); loadReward(); updateBanner();
 }
 /** 경기가 끝나 결과 창이 뜰 때. 같은 경기에서 두 번 띄우지 않는다. */
 function appGameOverAd(key) {
-  if (!NATIVE || !adState.ready || !adState.loaded) return;
-  if (key === adState.lastKey || Date.now() - adState.lastAt < AD_GAP_MS) return;
-  adState.lastKey = key; adState.lastAt = Date.now(); adState.loaded = false;
+  if (!NATIVE || key === adState.lastKey) return;
+  adState.lastKey = key;
+  const memo = adMemo(); memo.games = (memo.games || 0) + 1;
+  const due = memo.games >= AD_EVERY_GAMES && Date.now() - (memo.lastAt || 0) >= AD_GAP_MS;
+  if (!due || !adState.ready || !adState.loaded) { store(AD_KEY, memo); return; }
+  memo.games = 0; memo.lastAt = Date.now(); store(AD_KEY, memo);
+  adState.loaded = false;
   setTimeout(() => {
     NATIVE.AdMob.showInterstitial().catch(() => {}).finally(() => setTimeout(loadInterstitial, 1000));
   }, 1200); // 결과를 잠깐 본 뒤
+}
+
+/* 배너 광고: 메뉴·결과·대기실 창이 떠 있을 때만 화면 아래에. 치는 동안에는 숨긴다 */
+function bannerWanted() {
+  if (!$('att').hidden || !$('tut').hidden) return false;
+  return !$('menu').hidden || !$('over').hidden || !$('lobby').hidden;
+}
+function updateBanner() {
+  if (!NATIVE || !adState.ready || !NATIVE.ads.banner) return;
+  const want = bannerWanted();
+  if (want === adState.bannerShown) return;
+  adState.bannerShown = want;
+  document.body.classList.toggle('banner', want);
+  const { AdMob } = NATIVE;
+  if (!want) { AdMob.hideBanner().catch(() => {}); return; }
+  if (adState.banner) { AdMob.resumeBanner().catch(() => {}); return; }
+  adState.banner = true;
+  AdMob.addListener(NATIVE.BannerAdPluginEvents.SizeChanged, info => {
+    if (info && info.height > 0) document.body.style.setProperty('--banner-h', info.height + 'px');
+  }).catch(() => {});
+  AdMob.showBanner({ adId: NATIVE.ads.banner, adSize: NATIVE.BannerAdSize.BANNER, position: NATIVE.BannerAdPosition.BOTTOM_CENTER, margin: 0, isTesting: isTestAd(NATIVE.ads.banner) })
+    .catch(() => { adState.banner = false; adState.bannerShown = false; document.body.classList.remove('banner'); });
+}
+function isTestAd(id) { return NATIVE.ads.testing || String(id).startsWith('ca-app-pub-3940256099942544/'); }
+function watchBanner() {
+  const mo = new MutationObserver(() => updateBanner());
+  for (const id of ['menu', 'over', 'lobby', 'att', 'tut']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+}
+
+/* ---------- 안내선+ 아이템 (앱에서만) ----------
+ * 이번 샷만 수구가 쿠션(또는 공)에 한 번 더 튕기는 것까지 안내선을 보여 준다.
+ * 한 판에 사람마다 3번, 다 쓰면 광고를 보고 한 번 더 (판마다 한 번).
+ * 온라인은 두 사람 다 앱일 때만 (서버가 횟수를 센다). 웹에는 광고가 없어서 아이템도 없다.
+ */
+const ITEM_BASE = 3;
+let plusArmed = false;
+function itemsAllowed() {
+  if (!NATIVE || !players.length) return false;
+  if (net) return !!(net.state && net.state.itemsOn);
+  return true;
+}
+function itemLeft(i) { const p = players[i]; return p ? Math.max(0, ITEM_BASE + (p.itemBonus ? 1 : 0) - (p.itemUsed || 0)) : 0; }
+/** 지금 그리는 안내선이 안내선+인지: 내 차례면 내가 켰는지, 온라인 상대 차례면 상대가 켰는지 */
+function plusShown() {
+  if (!itemsAllowed()) return false;
+  if (net && !myTurnOnline()) return !!net.remotePlus;
+  return plusArmed;
+}
+function itemBadge(i) {
+  if (!itemsAllowed()) return '';
+  const left = itemLeft(i);
+  return `<span class="pitem${left ? '' : ' out'}" title="안내선+ 남은 횟수">+${left}</span>`;
+}
+function paintItems() {
+  const on = itemsAllowed();
+  $('plusRow').hidden = !on; $('mPlus').hidden = !on;
+  if (!on) return;
+  const i = net ? net.seat : cur, left = itemLeft(i), p = players[i];
+  const canAd = !left && !p.itemBonus && !!NATIVE.ads.rewarded;
+  const mine = canAct() && (!net || cur === net.seat);
+  for (const [id, big] of [['plusBtn', true], ['mPlus', false]]) {
+    const b = $(id);
+    b.classList.toggle('ad', canAd);
+    b.setAttribute('aria-pressed', String(plusArmed && left > 0));
+    if (canAd) b.innerHTML = big ? '<i>AD</i> 광고 보고 안내선+ 1번 더' : '<i>AD</i> +1';
+    else b.innerHTML = big ? `안내선+ <b>×${left}</b>` : `+ <b>${left}</b>`;
+    b.disabled = !mine || (!left && !canAd);
+    b.title = canAd ? '광고를 보면 안내선+를 한 번 더 쓸 수 있어요 (한 판에 한 번)' : '이번 샷만 쿠션 한 번 더 보기';
+  }
+  $('plusHelp').textContent = plusArmed && left ? '켜짐 · 이번 샷에 1번 써요' : canAd ? '다 썼어요 · 한 판에 한 번 광고로 충전' : left ? '이번 샷만 쿠션 한 번 더 보기' : '이번 판에는 다 썼어요';
+}
+function onPlus() {
+  if (!itemsAllowed() || !canAct()) return;
+  const left = itemLeft(net ? net.seat : cur);
+  if (left > 0) {
+    plusArmed = !plusArmed;
+    if (plusArmed && !guideOn) { guideOn = true; $('guideOn').checked = true; $('mGuide').setAttribute('aria-pressed', 'true'); }
+    guideDirty = true; paintItems(); appHaptic('shot'); return;
+  }
+  if (!players[cur].itemBonus && NATIVE.ads.rewarded) watchItemAd();
+}
+$('plusBtn').addEventListener('click', onPlus);
+$('mPlus').addEventListener('click', onPlus);
+
+function loadReward() {
+  if (!adState.ready || adState.rewardLoaded || !NATIVE.ads.rewarded) return;
+  NATIVE.AdMob.prepareRewardVideoAd({ adId: NATIVE.ads.rewarded, isTesting: isTestAd(NATIVE.ads.rewarded) })
+    .then(() => { adState.rewardLoaded = true; }, () => { setTimeout(loadReward, 60000); });
+}
+/** 보상형 광고를 끝까지 보면 안내선+ 1번 (자리마다 한 판에 한 번) */
+function watchItemAd() {
+  if (adState.rewardBusy) return;
+  if (!adState.ready || !adState.rewardLoaded) { toast('광고를 불러오는 중이에요', '잠시 뒤 다시 눌러 주세요', 'bad'); loadReward(); return; }
+  const { AdMob, RewardAdPluginEvents: E } = NATIVE;
+  const who = cur, round = net ? net.round : 0;
+  let rewarded = false; const handles = [];
+  adState.rewardBusy = true; adState.rewardLoaded = false;
+  const finish = () => {
+    if (!adState.rewardBusy) return;
+    adState.rewardBusy = false;
+    handles.forEach(h => h.then(x => x.remove()).catch(() => {}));
+    setTimeout(loadReward, 1000);
+    if (!rewarded) return;
+    if (net && (net.round !== round || !net.state || net.state.phase !== 'playing')) return;
+    players[who].itemBonus = true;
+    if (net) netSend({ type: 'itemAd' });
+    if (canAct() && cur === who) { plusArmed = true; guideDirty = true; }
+    renderScore(); syncUI();
+    toast('안내선+ 1번 충전', '이번 샷에 켜 두었어요', 'good');
+  };
+  handles.push(AdMob.addListener(E.Rewarded, () => { rewarded = true; }));
+  handles.push(AdMob.addListener(E.Dismissed, finish));
+  handles.push(AdMob.addListener(E.FailedToShow, finish));
+  AdMob.showRewardVideoAd().then(() => { rewarded = true; }, () => finish());
 }
 
 /** 초대 링크(https://danggu.ohsangplay.com/?room=코드, danggu://join?room=코드)로 앱이 열렸을 때 */
@@ -1900,6 +2065,7 @@ function bootApp() {
   });
   // 앱은 늘 휴대폰 가로 화면이라 화면 고르기를 숨긴다
   cfg.layout = 'auto'; $('segLayout').closest('.ctl').hidden = true; applyLayout();
+  watchBanner();
   startAppAds();
 }
 
@@ -1915,7 +2081,7 @@ function loop(now) {
   }
   if (phase === 'aim' && guideDirty && players.length) {
     const c = cueBall();
-    guide = simulateGuide(balls, c.id, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy);
+    guide = simulateGuide(balls, c.id, Math.cos(aim.ang), Math.sin(aim.ang), speed(), aim.hx, aim.hy, plusShown() ? 1 : 0);
     guideDirty = false;
   }
   if (net) netTick(now);

@@ -1,11 +1,15 @@
 {
-  "_comment": "AdMob 광고 ID. 기본값은 구글 공식 테스트 ID. 실제 ID는 저장소 Variables(ADMOB_IOS_APP_ID, ADMOB_IOS_INTERSTITIAL_ID, ADMOB_ANDROID_APP_ID, ADMOB_ANDROID_INTERSTITIAL_ID)로 넣으면 빌드 때 덮어쓴다.",
+  "_comment": "AdMob 광고 ID. 기본값은 구글 공식 테스트 ID. 실제 ID는 저장소 Variables(ADMOB_{IOS|ANDROID}_APP_ID, _INTERSTITIAL_ID, _BANNER_ID, _REWARDED_ID)로 넣으면 빌드 때 덮어쓴다. 전면 광고가 실제 ID인데 배너·보상형 ID가 없으면 그 광고는 끈다(실제 앱에 테스트 광고가 나가지 않게).",
   "ios": {
     "appId": "ca-app-pub-3940256099942544~1458002511",
-    "interstitial": "ca-app-pub-3940256099942544/4411468910"
+    "interstitial": "ca-app-pub-3940256099942544/4411468910",
+    "banner": "ca-app-pub-3940256099942544/2934735716",
+    "rewarded": "ca-app-pub-3940256099942544/1712485313"
   },
   "android": {
     "appId": "ca-app-pub-3940256099942544~3347511713",
-    "interstitial": "ca-app-pub-3940256099942544/1033173712"
+    "interstitial": "ca-app-pub-3940256099942544/1033173712",
+    "banner": "ca-app-pub-3940256099942544/6300978111",
+    "rewarded": "ca-app-pub-3940256099942544/5224354917"
   }
 }

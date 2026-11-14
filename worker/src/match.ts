@@ -9,6 +9,8 @@ export const ROOM_CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const ROOM_CODE_LENGTH = 4;
 export const NAME_MAX = 8;
 export const TARGETS = [5, 10, 20] as const;
+/** 안내선+ 아이템: 한 판에 기본 몇 번, 광고를 보면 한 번 더 (앱끼리 할 때만) */
+export const ITEM_BASE = 3;
 
 export type GameKind = '4' | '3' | '8';
 export type BallKind = 'white' | 'yellow' | 'red' | 'pool';
@@ -51,6 +53,14 @@ export interface Seat {
   /** 다시 들어올 때 쓰는 비밀 값. 상대에게는 보내지 않는다. */
   id: string;
   name: string;
+  /** 앱(스토어 버전)으로 들어왔는지. 두 사람 다 앱이어야 안내선+ 아이템을 쓴다. */
+  app?: boolean;
+}
+
+/** 안내선+ 아이템 쓴 횟수와 광고 보상 여부 (자리별) */
+export interface ItemUse {
+  used: number;
+  bonus: boolean;
 }
 
 export interface Shot {
@@ -63,6 +73,8 @@ export interface Shot {
   /** 포켓볼: 친 순간의 흰 공 위치 (프리볼로 옮겼을 수 있다) */
   cx?: number;
   cy?: number;
+  /** 안내선+를 쓰고 친 샷 */
+  plus?: boolean;
 }
 
 export interface Toast {
@@ -94,6 +106,8 @@ export interface RoomState {
   lastToast: Toast | null;
   winner: number | null;
   rematch: [boolean, boolean];
+  /** 안내선+ 아이템. 예전에 만든 방에는 없을 수 있다. */
+  items?: [ItemUse, ItemUse];
   createdAt: number;
   updatedAt: number;
 }
@@ -116,6 +130,20 @@ const BALLS: Record<GameKind, { id: string; kind: BallKind; n?: number }[]> = {
 };
 
 const emptyStat = (): PlayerStat => ({ score: 0, run: 0, high: 0, shots: 0 });
+const freshItems = (): [ItemUse, ItemUse] => [
+  { used: 0, bonus: false },
+  { used: 0, bonus: false },
+];
+
+/** 두 사람 다 앱으로 들어와 있으면 안내선+ 아이템을 쓸 수 있다 (웹은 광고가 없어서 아이템도 없다). */
+export function itemsOn(state: RoomState): boolean {
+  return !!(state.seats[0]?.app && state.seats[1]?.app);
+}
+
+function itemsOf(state: RoomState): [ItemUse, ItemUse] {
+  if (!state.items) state.items = freshItems();
+  return state.items;
+}
 
 export function isRoomCode(value: string): boolean {
   if (value.length !== ROOM_CODE_LENGTH) return false;
@@ -164,6 +192,7 @@ export function createRoom(code: string, game: GameKind, target: number, now: nu
     lastToast: null,
     winner: null,
     rematch: [false, false],
+    items: freshItems(),
     createdAt: now,
     updatedAt: now,
   };
@@ -181,6 +210,7 @@ function startGame(state: RoomState, now: number): void {
   state.lastToast = null;
   state.winner = null;
   state.rematch = [false, false];
+  state.items = freshItems();
   state.updatedAt = now;
 }
 
@@ -199,15 +229,17 @@ export function join(
   name: unknown,
   newId: string,
   now: number,
+  app = false,
 ): { seat: number; playerId: string } {
   const back = seatOf(state, playerId);
   if (back >= 0) {
+    (state.seats[back] as Seat).app = app;
     state.updatedAt = now;
     return { seat: back, playerId: playerId as string };
   }
   const open = state.seats.findIndex((s) => s === null);
   if (open < 0) throw new RoomError('이미 두 명이 들어와 있는 방이에요');
-  state.seats[open] = { id: newId, name: cleanName(name) };
+  state.seats[open] = { id: newId, name: cleanName(name), app };
   if (state.seats.every(Boolean) && state.phase === 'waiting') startGame(state, now);
   state.updatedAt = now;
   return { seat: open, playerId: newId };
@@ -256,6 +288,13 @@ export function parseShot(msg: Record<string, unknown>): Omit<Shot, 'seq' | 'by'
 export function shoot(state: RoomState, seat: number, msg: Record<string, unknown>, now: number): Shot {
   requireTurn(state, seat);
   const shot: Shot = { seq: state.seq + 1, by: seat, ...parseShot(msg) };
+  if (msg.plus === true) {
+    if (!itemsOn(state)) throw new RoomError('이 방에서는 안내선+를 쓸 수 없어요');
+    const it = itemsOf(state)[seat];
+    if (it.used >= ITEM_BASE + (it.bonus ? 1 : 0)) throw new RoomError('안내선+가 남아 있지 않아요');
+    it.used += 1;
+    shot.plus = true;
+  }
   state.pending = shot;
   state.stats[seat].shots += 1;
   state.updatedAt = now;
@@ -274,6 +313,7 @@ export function parseAim(state: RoomState, seat: number, msg: Record<string, unk
     hx: Math.max(-1, Math.min(1, hx)),
     hy: Math.max(-1, Math.min(1, hy)),
     pulling: pulling === true,
+    plus: msg.plus === true && itemsOn(state),
     ...(state.game === '8' ? parseCue(msg) : {}),
   };
 }
@@ -384,6 +424,16 @@ export function applyResult(state: RoomState, seat: number, msg: Record<string, 
   state.updatedAt = now;
 }
 
+/** 광고를 보고 안내선+ 한 번 더. 한 판에 자리마다 한 번. */
+export function grantItemAd(state: RoomState, seat: number, now: number): void {
+  if (state.phase !== 'playing') throw new RoomError('경기 중에만 받을 수 있어요');
+  if (!itemsOn(state)) throw new RoomError('이 방에서는 안내선+를 쓸 수 없어요');
+  const it = itemsOf(state)[seat];
+  if (it.bonus) throw new RoomError('이번 판에는 이미 받았어요');
+  it.bonus = true;
+  state.updatedAt = now;
+}
+
 /** 다시 하기. 두 사람이 다 누르면 먼저 치는 사람을 바꿔서 새 판. */
 export function requestRematch(state: RoomState, seat: number, now: number): boolean {
   if (state.phase !== 'finished') throw new RoomError('경기가 끝난 뒤에 누를 수 있어요');
@@ -417,5 +467,8 @@ export function viewFor(state: RoomState, seat: number, connected: [boolean, boo
     lastToast: state.lastToast,
     winner: state.winner,
     rematch: state.rematch,
+    itemsOn: itemsOn(state),
+    items: itemsOf(state),
+    itemBase: ITEM_BASE,
   };
 }

@@ -5,6 +5,7 @@ import {
   type RoomState,
   applyResult,
   createRoom,
+  grantItemAd,
   isGameKind,
   isTarget,
   join,
@@ -112,7 +113,7 @@ export class DangguRoom extends DurableObject<Env> {
       let seat: number;
       let playerId: string;
       try {
-        ({ seat, playerId } = join(state, url.searchParams.get('playerId'), url.searchParams.get('name') ?? '', crypto.randomUUID(), Date.now()));
+        ({ seat, playerId } = join(state, url.searchParams.get('playerId'), url.searchParams.get('name') ?? '', crypto.randomUUID(), Date.now(), url.searchParams.get('app') === '1'));
       } catch (err) {
         if (err instanceof RoomError) return DangguRoom.reject(err.message, 4009);
         throw err;
@@ -172,6 +173,9 @@ export class DangguRoom extends DurableObject<Env> {
           }
           case 'result':
             applyResult(state, att.seat, msg, now);
+            break;
+          case 'itemAd':
+            grantItemAd(state, att.seat, now);
             break;
           case 'rematch':
             requestRematch(state, att.seat, now);
