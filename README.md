@@ -33,7 +33,7 @@ app/                 스토어 앱 (Capacitor 8). web/을 앱 안에 묶는다
 - 패키지명 / 번들 ID: `com.ohsang.play.danggu`, 가로 화면 고정, 상태 표시줄 숨김
 - 광고: 경기가 끝날 때 전면 광고(AdMob), 3분에 한 번까지. 게임 중에는 광고 없음
   - 처음 실행: 유럽 등은 동의 화면 → iPhone은 안내 후 추적 허용 요청 → 광고 시작
-  - 광고 ID는 저장소 Variables로: `ADMOB_IOS_APP_ID`, `ADMOB_IOS_INTERSTITIAL_ID`, `ADMOB_ANDROID_APP_ID`, `ADMOB_ANDROID_INTERSTITIAL_ID`, `ADMOB_IOS_BANNER_ID`, `ADMOB_IOS_REWARDED_ID`, `ADMOB_ANDROID_BANNER_ID`, `ADMOB_ANDROID_REWARDED_ID` (없으면 구글 테스트 광고. 전면이 실제 ID인데 배너·보상형이 비어 있으면 그 광고는 꺼짐)
+  - 광고 ID는 저장소 Variables로: `ADMOB_IOS_APP_ID`, `ADMOB_IOS_INTERSTITIAL_ID`, `ADMOB_ANDROID_APP_ID`, `ADMOB_ANDROID_INTERSTITIAL_ID`, `ADMOB_IOS_REWARDED_ID`, `ADMOB_ANDROID_REWARDED_ID` (없으면 구글 테스트 광고. 전면이 실제 ID인데 보상형이 비어 있으면 '광고 보고 +1'만 꺼짐)
 - 초대 링크 `https://danggu.ohsangplay.com/?room=코드`가 앱으로 바로 열림 (앱이 없으면 웹)
   - iOS: Secrets `APPLE_TEAM_ID`가 있으면 Pages 배포 때 `.well-known/apple-app-site-association`을 만든다
   - 안드로이드: Variables `ANDROID_CERT_SHA256`(업로드 키, Play 앱 서명 키를 쉼표로)이 있으면 `assetlinks.json`

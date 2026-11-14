@@ -200,8 +200,6 @@ body.m .mside{display:flex;flex-direction:column;gap:6px;min-height:0;align-item
 .pitem{display:inline-block;font-family:var(--f-mono);font-size:11px;font-weight:600;color:var(--brass);border:1px solid #6b5a33;border-radius:5px;padding:0 4px;margin-left:4px;line-height:1.4;vertical-align:1px}
 .pitem.out{color:var(--muted);border-color:var(--line)}
 body.m .pitem{font-size:10px;padding:0 3px}
-/* 앱 배너 광고(메뉴·결과·대기실에서만): 화면 아래에 붙으니 창 아래를 비운다 */
-body.banner .modal:not(.pop){padding-bottom:calc(var(--banner-h,50px) + 12px + env(safe-area-inset-bottom,0px))!important}
 .spin-sheet{width:min(320px,100%);gap:12px}
 /* 당점·두께 팝업: 당구대가 보이게 옅은 배경, 오른쪽에 붙여서. 바깥을 누르면 닫힘 */
 .modal.pop{background:rgba(8,10,13,.32)}
@@ -412,7 +410,7 @@ body.m .loupe{--lz:128px}
 <div class="modal" id="att" hidden>
   <div class="sheet">
     <h2>광고 안내</h2>
-    <div class="result">오늘도 당구는 무료로 운영하기 위해 메뉴·결과 화면 아래에 배너를, 몇 판에 한 번 경기가 끝날 때 광고를 보여 줘요. 다음 화면에서 허용하면 관심 있을 만한 광고가 나오고, 허용하지 않아도 게임은 똑같이 할 수 있어요.</div>
+    <div class="result">오늘도 당구는 무료로 운영하기 위해 몇 판에 한 번 경기가 끝날 때 광고를 보여 줘요. 안내선+를 다 쓴 뒤 원하면 광고를 보고 한 번 더 받을 수도 있어요. 다음 화면에서 허용하면 관심 있을 만한 광고가 나오고, 허용하지 않아도 게임은 똑같이 할 수 있어요.</div>
     <button class="shoot" id="attOk" type="button">계속</button>
   </div>
 </div>
@@ -1855,7 +1853,7 @@ const NATIVE = window.DangguNative && window.DangguNative.isNative ? window.Dang
 /* 전면 광고: 경기가 끝날 때, 5판마다 한 번이고 앞 광고와 30분 넘게 떨어져 있을 때만 (연달아 즐길 수 있게) */
 const AD_EVERY_GAMES = 5, AD_GAP_MS = 30 * 60 * 1000;
 const AD_KEY = 'danggu.ad';
-let adState = { ready: false, loaded: false, lastKey: '', rewardLoaded: false, rewardBusy: false, banner: false, bannerShown: false };
+let adState = { ready: false, loaded: false, lastKey: '', rewardLoaded: false, rewardBusy: false };
 function adMemo() { const v = load(AD_KEY); return v && typeof v === 'object' ? v : { games: 0, lastAt: 0 }; }
 
 function appHaptic(kind) {
@@ -1889,7 +1887,7 @@ async function startAppAds() {
   } catch (e) {}
   await askTracking();
   try { await AdMob.initialize({ initializeForTesting: NATIVE.ads.testing }); } catch (e) { return; }
-  adState.ready = true; loadInterstitial(); loadReward(); updateBanner();
+  adState.ready = true; loadInterstitial(); loadReward();
 }
 /** 경기가 끝나 결과 창이 뜰 때. 같은 경기에서 두 번 띄우지 않는다. */
 function appGameOverAd(key) {
@@ -1905,32 +1903,7 @@ function appGameOverAd(key) {
   }, 1200); // 결과를 잠깐 본 뒤
 }
 
-/* 배너 광고: 메뉴·결과·대기실 창이 떠 있을 때만 화면 아래에. 치는 동안에는 숨긴다 */
-function bannerWanted() {
-  if (!$('att').hidden || !$('tut').hidden) return false;
-  return !$('menu').hidden || !$('over').hidden || !$('lobby').hidden;
-}
-function updateBanner() {
-  if (!NATIVE || !adState.ready || !NATIVE.ads.banner) return;
-  const want = bannerWanted();
-  if (want === adState.bannerShown) return;
-  adState.bannerShown = want;
-  document.body.classList.toggle('banner', want);
-  const { AdMob } = NATIVE;
-  if (!want) { AdMob.hideBanner().catch(() => {}); return; }
-  if (adState.banner) { AdMob.resumeBanner().catch(() => {}); return; }
-  adState.banner = true;
-  AdMob.addListener(NATIVE.BannerAdPluginEvents.SizeChanged, info => {
-    if (info && info.height > 0) document.body.style.setProperty('--banner-h', info.height + 'px');
-  }).catch(() => {});
-  AdMob.showBanner({ adId: NATIVE.ads.banner, adSize: NATIVE.BannerAdSize.BANNER, position: NATIVE.BannerAdPosition.BOTTOM_CENTER, margin: 0, isTesting: isTestAd(NATIVE.ads.banner) })
-    .catch(() => { adState.banner = false; adState.bannerShown = false; document.body.classList.remove('banner'); });
-}
 function isTestAd(id) { return NATIVE.ads.testing || String(id).startsWith('ca-app-pub-3940256099942544/'); }
-function watchBanner() {
-  const mo = new MutationObserver(() => updateBanner());
-  for (const id of ['menu', 'over', 'lobby', 'att', 'tut']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
-}
 
 /* ---------- 안내선+ 아이템 (앱에서만) ----------
  * 이번 샷만 수구가 쿠션(또는 공)에 한 번 더 튕기는 것까지 안내선을 보여 준다.
@@ -2065,7 +2038,6 @@ function bootApp() {
   });
   // 앱은 늘 휴대폰 가로 화면이라 화면 고르기를 숨긴다
   cfg.layout = 'auto'; $('segLayout').closest('.ctl').hidden = true; applyLayout();
-  watchBanner();
   startAppAds();
 }
 

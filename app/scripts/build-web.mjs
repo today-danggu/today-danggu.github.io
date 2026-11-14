@@ -36,14 +36,14 @@ for (const [plat, P] of [['ios', 'IOS'], ['android', 'ANDROID']]) {
   if (env('APP_ID')) ads[plat].appId = env('APP_ID');
   if (env('INTERSTITIAL_ID')) ads[plat].interstitial = env('INTERSTITIAL_ID');
   const real = !isTestId(ads[plat].interstitial);
-  // 배너·보상형: 값이 있으면 그 ID, 실제 앱인데 값이 없으면 끈다(''), 테스트 빌드면 테스트 ID
-  for (const [unit, key] of [['banner', 'BANNER_ID'], ['rewarded', 'REWARDED_ID']]) {
+  // 보상형: 값이 있으면 그 ID, 실제 앱인데 값이 없으면 끈다(''), 테스트 빌드면 테스트 ID
+  for (const [unit, key] of [['rewarded', 'REWARDED_ID']]) {
     if (env(key)) ads[plat][unit] = env(key);
     else if (real) ads[plat][unit] = '';
   }
 }
 const testingBy = { ios: isTestId(ads.ios.interstitial), android: isTestId(ads.android.interstitial) };
-const units = (p) => ({ interstitial: ads[p].interstitial, banner: ads[p].banner, rewarded: ads[p].rewarded });
+const units = (p) => ({ interstitial: ads[p].interstitial, rewarded: ads[p].rewarded });
 await build({
   entryPoints: [path.join(root, 'src', 'native.js')],
   outfile: path.join(www, 'js', 'cap.js'),
@@ -70,5 +70,5 @@ if (!html.includes('js/cap.js')) html = html.replace('<script src="js/config.js"
 if (!html.includes('js/cap.js')) throw new Error('index.html에 js/config.js를 불러오는 줄이 없어요');
 fs.writeFileSync(indexFile, html);
 fs.writeFileSync(path.join(root, 'www-ads.json'), JSON.stringify({ iosAppId: ads.ios.appId, androidAppId: ads.android.appId, testing: testingBy.ios, testingAndroid: testingBy.android }));
-const desc = (p) => ['interstitial', 'banner', 'rewarded'].map((u) => `${u}:${!ads[p][u] ? '끔' : isTestId(ads[p][u]) ? '테스트' : '실제'}`).join(' ');
+const desc = (p) => ['interstitial', 'rewarded'].map((u) => `${u}:${!ads[p][u] ? '끔' : isTestId(ads[p][u]) ? '테스트' : '실제'}`).join(' ');
 console.log(`www 준비 완료 (서버 ${API_BASE}) 광고 iOS[${desc('ios')}] 안드로이드[${desc('android')}]`);
