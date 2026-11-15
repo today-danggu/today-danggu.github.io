@@ -40,7 +40,9 @@ jobs:
           else
             echo "::notice::APPLE_TEAM_ID가 없어 iOS 링크로 앱 열기 파일은 아직 안 만들었어요"
           fi
-          FPS=$(printf '%s' "$ANDROID_CERT_SHA256" | tr ',' '\n' | tr -d ' ' | tr 'a-f' 'A-F' | grep -E '^([0-9A-F]{2}:){31}[0-9A-F]{2}$' || true)
+          # Play Console(앱 무결성 → 앱 서명)에 나온 인증서 SHA-256. 공개 정보라 여기 적어 둔다. 변수 값도 함께 넣는다.
+          PLAY_FPS="02:40:57:A5:76:85:42:87:49:10:30:82:A5:B1:31:CC:C0:4B:02:98:69:62:54:BB:8C:BE:9B:68:2C:42:A2:BE,60:D1:B0:24:06:F0:CC:72:A0:E9:E9:65:71:96:DF:83:56:44:78:54:16:AA:9D:46:55:5A:01:34:5B:6A:6D:50,F4:D2:63:36:3F:E2:10:80:48:C8:EE:7B:2C:53:93:47:D5:E2:37:C0:F0:34:7E:90:E5:3F:CE:95:33:80:BC:A8"
+          FPS=$(printf '%s,%s' "$PLAY_FPS" "$ANDROID_CERT_SHA256" | tr ',' '\n' | tr -d ' ' | tr 'a-f' 'A-F' | grep -E '^([0-9A-F]{2}:){31}[0-9A-F]{2}$' | sort -u || true)
           if [ -n "$FPS" ]; then
             printf '%s\n' "$FPS" | jq -R . | jq -s '[{relation: ["delegate_permission/common.handle_all_urls"], target: {namespace: "android_app", package_name: "com.ohsang.play.danggu", sha256_cert_fingerprints: .}}]' > _site/.well-known/assetlinks.json
             echo "안드로이드 링크 열기: assetlinks.json 만듦"
