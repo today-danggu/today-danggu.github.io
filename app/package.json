@@ -1,7 +1,7 @@
 {
   "name": "danggu-app",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "오늘도 당구 앱 (Capacitor). web/을 앱 안에 묶는다.",
   "type": "module",
   "scripts": {
